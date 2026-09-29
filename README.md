@@ -1,4 +1,4 @@
-# calendar-chat-api
+# wely-chat
 
 Service de **messagerie temps réel** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform).
 
@@ -126,7 +126,7 @@ MongoDB stocke le nom de chaque champ dans chaque document : avec 50 messages pa
 ```mermaid
 sequenceDiagram
     participant A as Alice (navigateur)
-    participant S as calendar-chat-api
+    participant S as wely-chat
     participant DB as MongoDB
     participant B as Bob (navigateur)
 
@@ -237,6 +237,6 @@ Ce service concentre les chantiers les plus intéressants du projet.
 - **Le message est diffusé avant d'être persisté.** Si l'écriture échoue, le destinataire a vu un message absent de la base. L'ordre doit être inversé.
 - **`directBestEffort()` abandonne silencieusement.** Le résultat de `tryEmitNext` n'est pas vérifié : une émission perdue ne laisse aucune trace.
 - **`@Transactional` est inopérant** : aucun `ReactiveMongoTransactionManager` n'est déclaré, la création conversation + bucket initial n'est donc pas atomique.
-- **Pas de gestion d'erreurs.** Contrairement à `calendar-users-api` et `calendar-social-api`, ce service n'a ni hiérarchie d'exceptions ni `@ControllerAdvice`.
+- **Pas de gestion d'erreurs.** Contrairement à `wely-users` et `wely-social`, ce service n'a ni hiérarchie d'exceptions ni `@ControllerAdvice`.
 - **Couverture de test insuffisante** : une seule classe de test active pour 25 classes de production (`ChatApplicationTests` est entièrement commentée), alors que c'est le service le plus exposé aux problèmes de concurrence.
 - **Logs trop verbeux** : `io.rsocket.FrameLogger` est en `DEBUG`, ce qui journalise chaque frame.
