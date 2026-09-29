@@ -238,5 +238,5 @@ Ce service concentre les chantiers les plus intéressants du projet.
 - **`directBestEffort()` abandonne silencieusement.** Le résultat de `tryEmitNext` n'est pas vérifié : une émission perdue ne laisse aucune trace.
 - **`@Transactional` est inopérant** : aucun `ReactiveMongoTransactionManager` n'est déclaré, la création conversation + bucket initial n'est donc pas atomique.
 - **Pas de gestion d'erreurs.** Contrairement à `users-api` et `social-api`, ce service n'a ni hiérarchie d'exceptions ni `@ControllerAdvice`.
-- **Couverture de test insuffisante** : 2 classes de test pour 25 classes de production, alors que c'est le service le plus exposé aux problèmes de concurrence.
+- **Couverture de test insuffisante** : une seule classe de test active pour 25 classes de production (`ChatApplicationTests` est entièrement commentée), alors que c'est le service le plus exposé aux problèmes de concurrence.
 - **Logs trop verbeux** : `io.rsocket.FrameLogger` est en `DEBUG`, ce qui journalise chaque frame.
