@@ -16,4 +16,14 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
     Mono<ConversationEntity> findByParticipantIds(List<String> participantIds);
 
     Flux<ConversationEntity> findByParticipantIdsContaining(String userId);
+
+    /**
+     * Looks up a conversation the caller actually takes part in.
+     *
+     * <p>The participation check is part of the query rather than a test applied
+     * after loading: a non-participant gets an empty result and the document is
+     * never read. Every access path that takes a conversation id from the client
+     * must go through this method.
+     */
+    Mono<ConversationEntity> findByIdAndParticipantIdsContaining(String id, String userId);
 }

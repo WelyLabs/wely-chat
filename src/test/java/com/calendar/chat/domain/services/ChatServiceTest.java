@@ -97,10 +97,22 @@ class ChatServiceTest {
         String convId = UUID.randomUUID().toString();
         MessageBucket bucket = new MessageBucket(convId, 0, List.of());
 
-        when(chatRepository.findBucketByConversationIdAndBucketIndex(convId, 0)).thenReturn(Mono.just(bucket));
+        when(chatRepository.findBucketByConversationIdAndBucketIndex(convId, 0, "user1"))
+                .thenReturn(Mono.just(bucket));
 
-        StepVerifier.create(chatService.readPreviousMessages(convId, 0))
+        StepVerifier.create(chatService.readPreviousMessages(convId, 0, "user1"))
                 .expectNext(bucket)
+                .verifyComplete();
+    }
+
+    @Test
+    void readPreviousMessages_shouldBeEmptyForNonParticipant() {
+        String convId = UUID.randomUUID().toString();
+
+        when(chatRepository.findBucketByConversationIdAndBucketIndex(convId, 0, "intruder"))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.readPreviousMessages(convId, 0, "intruder"))
                 .verifyComplete();
     }
 
@@ -109,10 +121,20 @@ class ChatServiceTest {
         String convId = UUID.randomUUID().toString();
         ConversationDetail detail = new ConversationDetail(convId, List.of(), null, List.of(), 0);
 
-        when(chatRepository.findById(convId)).thenReturn(Mono.just(detail));
+        when(chatRepository.findById(convId, "user1")).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readConversationById(convId))
+        StepVerifier.create(chatService.readConversationById(convId, "user1"))
                 .expectNext(detail)
+                .verifyComplete();
+    }
+
+    @Test
+    void readConversationById_shouldBeEmptyForNonParticipant() {
+        String convId = UUID.randomUUID().toString();
+
+        when(chatRepository.findById(convId, "intruder")).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.readConversationById(convId, "intruder"))
                 .verifyComplete();
     }
 

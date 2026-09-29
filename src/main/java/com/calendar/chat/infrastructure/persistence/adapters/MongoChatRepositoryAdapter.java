@@ -33,6 +33,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
         this.conversationMapper = conversationMapper;
     }
 
+    @Override
     @Transactional
     public Mono<ConversationDetail> saveWithInitialBucket(List<String> participantIds) {
 
@@ -59,13 +60,15 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 });
     }
 
+    @Override
     public Mono<ConversationDetail> findByParticipantIds(List<String> participantIds) {
         return conversationRepository.findByParticipantIds(participantIds)
                 .flatMap(this::loadConversationWithMessages);
     }
 
-    public Mono<ConversationDetail> findById(String conversationId) {
-        return conversationRepository.findById(conversationId)
+    @Override
+    public Mono<ConversationDetail> findById(String conversationId, String requesterId) {
+        return conversationRepository.findByIdAndParticipantIdsContaining(conversationId, requesterId)
                 .flatMap(this::loadConversationWithMessages);
     }
 
@@ -88,9 +91,13 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     }
 
 
+    @Override
     public Mono<Void> postMessage(Message message) {
 
-        return conversationRepository.findById(message.conversationId())
+        // Scoped by sender: a conversation the sender is not part of yields an
+        // empty result, so the message is never appended.
+        return conversationRepository
+                .findByIdAndParticipantIdsContaining(message.conversationId(), message.senderId())
                 .flatMap(conversationEntity -> {
                     MessageEntity messageEntity = conversationMapper.toMessageEntity(message);
                     conversationEntity.setLastMessage(messageEntity);
@@ -115,11 +122,19 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 });
     }
 
-    public Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId, Integer bucketIndex) {
-        return messageBucketRepository.findByConversationIdAndBucketIndex(conversationId, bucketIndex)
+    @Override
+    public Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
+                                                                        Integer bucketIndex,
+                                                                        String requesterId) {
+        // Buckets carry no participant list, so participation is established on
+        // the conversation first; the bucket is only read once that check passes.
+        return conversationRepository.findByIdAndParticipantIdsContaining(conversationId, requesterId)
+                .flatMap(conversation -> messageBucketRepository
+                        .findByConversationIdAndBucketIndex(conversationId, bucketIndex))
                 .map(conversationMapper::toMessageBucket);
     }
 
+    @Override
     public Flux<ConversationSummary> findUserConversations(String userId) {
         return conversationRepository.findByParticipantIdsContaining(userId).map(conversationMapper::toConversationSummary);
     }

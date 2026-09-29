@@ -38,12 +38,17 @@ public class ChatService {
                 .filter(msg -> msg.receiverId().equals(userId));
     }
 
-    public Mono<MessageBucket> readPreviousMessages(String conversationId, Integer bucketIndex) {
-        return chatRepository.findBucketByConversationIdAndBucketIndex(conversationId, bucketIndex);
+    /**
+     * Reads a page of history. {@code requesterId} comes from the caller's token
+     * and scopes the lookup: a conversation the caller does not take part in
+     * yields an empty result.
+     */
+    public Mono<MessageBucket> readPreviousMessages(String conversationId, Integer bucketIndex, String requesterId) {
+        return chatRepository.findBucketByConversationIdAndBucketIndex(conversationId, bucketIndex, requesterId);
     }
 
-    public Mono<ConversationDetail> readConversationById(String conversationId) {
-        return chatRepository.findById(conversationId);
+    public Mono<ConversationDetail> readConversationById(String conversationId, String requesterId) {
+        return chatRepository.findById(conversationId, requesterId);
     }
 
     public Flux<ConversationSummary> readConversations(String userId) {

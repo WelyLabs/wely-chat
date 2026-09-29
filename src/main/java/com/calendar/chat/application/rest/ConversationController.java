@@ -33,14 +33,26 @@ public class ConversationController {
     }
 
     @GetMapping("{conversationId}/loadMessages")
-    public Mono<ResponseEntity<MessageBucket>> readPreviousMessages(@PathVariable String conversationId,
-                                                                    @RequestParam Integer bucketIndex) {
-        return chatService.readPreviousMessages(conversationId, bucketIndex).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<MessageBucket>> readPreviousMessages(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String conversationId,
+            @RequestParam Integer bucketIndex) {
+        String userId = jwt.getClaimAsString("businessId");
+
+        return chatService.readPreviousMessages(conversationId, bucketIndex, userId)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
     @GetMapping("{conversationId}")
-    public Mono<ResponseEntity<ConversationDetail>> getConversationById(@PathVariable String conversationId) {
-        return chatService.readConversationById(conversationId).map(ResponseEntity::ok);
+    public Mono<ResponseEntity<ConversationDetail>> getConversationById(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String conversationId) {
+        String userId = jwt.getClaimAsString("businessId");
+
+        return chatService.readConversationById(conversationId, userId)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
     }
 
     @GetMapping("all")
