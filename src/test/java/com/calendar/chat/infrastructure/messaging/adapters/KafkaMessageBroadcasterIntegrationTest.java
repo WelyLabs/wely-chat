@@ -51,7 +51,12 @@ import static org.assertj.core.api.Assertions.assertThat;
         // the group has been assigned its partitions is simply never seen. Each instance gets a
         // fresh group by design, so there is never a committed offset to fall back on.
         "spring.cloud.stream.kafka.bindings.messageBroadcast-in-0.consumer.startOffset=earliest",
-        "spring.cloud.stream.kafka.bindings.messageBroadcast-in-0.consumer.resetOffsets=true"
+        "spring.cloud.stream.kafka.bindings.messageBroadcast-in-0.consumer.resetOffsets=true",
+        // The shared test profile silences everything at WARN. A round trip that does not
+        // happen is indistinguishable from one that is slow unless the binder says what it did.
+        "logging.level.com.calendar.chat=DEBUG",
+        "logging.level.org.springframework.cloud.stream=INFO",
+        "logging.level.org.springframework.integration=INFO"
 })
 @ActiveProfiles("test")
 @EnabledIf("containersRequested")
