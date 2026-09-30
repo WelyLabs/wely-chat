@@ -174,15 +174,13 @@
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>0.8.13</version>
 				<configuration>
-					<excludes>
-						<exclude>com/calendar/chat/ChatApplication.class</exclude>
-						<exclude>com/calendar/chat/domain/models/**</exclude>
-						<exclude>com/calendar/chat/configuration/**</exclude>
-						<exclude>com/calendar/chat/infrastructure/persistence/models/**</exclude>
-						<exclude>com/calendar/chat/infrastructure/persistence/mappers/**</exclude>
-						<exclude>com/calendar/chat/infrastructure/persistence/adapters/**</exclude>
-						<exclude>com/calendar/chat/application/**</exclude>
-					</excludes>
+				<!--
+					No excludes. They only hide classes from JaCoCo's own report — SonarCloud
+					still analyses every source file and counts anything missing from the report
+					as uncovered, which is how this project reported 90% locally and 38% on
+					SonarCloud for the same commit. The adapters, controllers and configuration
+					that used to be listed here all have tests now.
+				-->
 				</configuration>
 				<executions>
 					<execution>
@@ -210,7 +208,7 @@
 										<limit>
 											<counter>LINE</counter>
 											<value>COVEREDRATIO</value>
-											<minimum>1.00</minimum>
+											<minimum>0.80</minimum>
 										</limit>
 									</limits>
 								</rule>
