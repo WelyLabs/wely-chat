@@ -15,11 +15,17 @@ public interface ChatRepository {
 
     Mono<ConversationDetail> findByParticipantIds(List<String> participantIds);
 
+    /**
+     * Appends a message to its conversation. Fails with an empty result if the
+     * sender does not take part in the target conversation.
+     */
     Mono<Void> postMessage(Message message);
 
-    Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId, Integer bucketIndex);
+    Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
+                                                                Integer bucketIndex,
+                                                                String requesterId);
 
-    Mono<ConversationDetail> findById(String conversationId);
+    Mono<ConversationDetail> findById(String conversationId, String requesterId);
 
     Flux<ConversationSummary> findUserConversations(String userId);
 }

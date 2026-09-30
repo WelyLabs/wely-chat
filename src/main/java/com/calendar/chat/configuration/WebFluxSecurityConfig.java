@@ -29,6 +29,9 @@ public class WebFluxSecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange((authorize) -> authorize
                         .pathMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // Kubernetes probes: the kubelet carries no token. Only the two
+                        // health groups are opened, not /actuator as a whole.
+                        .pathMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
                 .build();
