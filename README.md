@@ -241,11 +241,20 @@ de vérité : le message est déjà en base avant d'être diffusé, et un client
 recharge la conversation. Exiger des acquittements et du rejeu pour une copie qui existe déjà
 serait payer cher un problème qui n'existe pas.
 
-Le topic n'est pas créé automatiquement (`auto-create-topics=false`). Avant un déploiement :
+Le binder n'est pas autorisé à créer le topic (`auto-create-topics=false`), mais le broker
+déployé dans le cluster garde le défaut de Kafka (`auto.create.topics.enable=true`) : il le crée
+au premier message, comme pour `USER_CREATED`. Rien à faire côté dev.
+
+`CHAT_BROADCAST_TOPIC` existe pour qu'un topic par environnement reste possible — l'overlay dev
+utilise `DEV_MESSAGE_BROADCAST`. C'est indispensable dès que plusieurs environnements partagent
+un même broker : les identifiants utilisateur viennent du même realm Keycloak, donc un pod de
+dev consommant le topic de prod livrerait ces messages à ses propres abonnés.
+
+Sur un broker infogéré où la création automatique est désactivée, il faut créer le topic
+d'avance, avec une rétention courte et sans compaction — les groupes de consommation étant
+jetables, leurs offsets s'accumulent :
 
 ```bash
-# un topic par environnement : dev et prod partagent le même cluster Confluent
-kafka-topics --create --topic MESSAGE_BROADCAST     --partitions 3 --config retention.ms=300000
 kafka-topics --create --topic DEV_MESSAGE_BROADCAST --partitions 3 --config retention.ms=300000
 ```
 
