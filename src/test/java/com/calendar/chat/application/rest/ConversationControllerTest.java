@@ -4,6 +4,8 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,7 +48,7 @@ class ConversationControllerTest {
     // --- getConversation ---------------------------------------------------
 
     @Test
-    @DisplayName("l'identité vient du token, jamais d'un paramètre client")
+    @DisplayName("identity comes from the token, never from a client parameter")
     void getConversation_shouldDeriveTheCallerFromTheToken() {
         givenAuthenticatedCaller();
         ConversationDetail detail = new ConversationDetail();
@@ -78,26 +80,28 @@ class ConversationControllerTest {
     }
 
     @Test
-    @DisplayName("un non-participant reçoit 404, sans confirmer que la conversation existe")
-    void readPreviousMessages_shouldReturnNotFoundForNonParticipant() {
+    @DisplayName("a non-participant gets a 404 error, without confirming the page exists")
+    void readPreviousMessages_shouldFailAsNotFoundForNonParticipant() {
         givenAuthenticatedCaller();
         when(chatService.readPreviousMessages(CONVERSATION_ID, 2, CALLER_ID)).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.readPreviousMessages(jwt, CONVERSATION_ID, 2))
-                .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND))
-                .verifyComplete();
+                .expectErrorMatches(error -> error instanceof ChatException
+                        && ((ChatException) error).getErrorCode()
+                                == ChatErrorCode.MESSAGE_PAGE_NOT_FOUND)
+                .verify();
     }
 
     @Test
-    @DisplayName("l'identité du token est transmise au service, pas ignorée")
+    @DisplayName("the token identity is passed to the service, not dropped")
     void readPreviousMessages_shouldScopeTheLookupToTheCaller() {
         givenAuthenticatedCaller();
         when(chatService.readPreviousMessages(CONVERSATION_ID, 0, CALLER_ID)).thenReturn(Mono.empty());
 
-        controller.readPreviousMessages(jwt, CONVERSATION_ID, 0).block();
+        controller.readPreviousMessages(jwt, CONVERSATION_ID, 0).onErrorComplete().block();
 
-        // Avant le correctif, seul le conversationId du chemin était transmis : n'importe
-        // quel utilisateur authentifié pouvait lire l'historique d'autrui.
+        // Before the fix only the path's conversationId was passed, so any authenticated
+        // user could read someone else's history.
         verify(chatService).readPreviousMessages(CONVERSATION_ID, 0, CALLER_ID);
     }
 
@@ -118,13 +122,18 @@ class ConversationControllerTest {
     }
 
     @Test
-    void getConversationById_shouldReturnNotFoundForNonParticipant() {
+    @DisplayName("a non-participant and a missing conversation yield the same error")
+    void getConversationById_shouldFailAsNotFoundForNonParticipant() {
         givenAuthenticatedCaller();
         when(chatService.readConversationById(CONVERSATION_ID, CALLER_ID)).thenReturn(Mono.empty());
 
+        // A distinct code for "not yours" would let anyone enumerate existing
+        // conversations: both cases deliberately share CHT-BUS-001.
         StepVerifier.create(controller.getConversationById(jwt, CONVERSATION_ID))
-                .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND))
-                .verifyComplete();
+                .expectErrorMatches(error -> error instanceof ChatException
+                        && ((ChatException) error).getErrorCode()
+                                == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
     }
 
     // --- getConversations -------------------------------------------------

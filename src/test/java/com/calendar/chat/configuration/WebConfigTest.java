@@ -18,20 +18,20 @@ class WebConfigTest {
     private final WebConfig config = new WebConfig();
 
     @Test
-    @DisplayName("les contrôleurs sont préfixés par le segment de service")
+    @DisplayName("controllers are prefixed with the service segment")
     void configurePathMatching_shouldPrefixControllersWithTheServiceSegment() {
         PathMatchConfigurer configurer = mock(PathMatchConfigurer.class);
 
         config.configurePathMatching(configurer);
 
-        // La gateway fait stripPrefix(2) sur /api/v1/chat-service/** et laisse /chat-service,
-        // que ce préfixe réattache : un service répond donc sur le même chemin qu'il
-        // soit appelé via la gateway ou directement.
+        // The gateway strips /api/v1 from /api/v1/chat-service/** and leaves
+        // /chat-service, which this prefix reattaches: a service answers on the same
+        // path whether it is called through the gateway or directly.
         verify(configurer).addPathPrefix(eq("/chat-service"), any(HandlerTypePredicate.class));
     }
 
     @Test
-    @DisplayName("le préfixe ne s'applique qu'aux @RestController")
+    @DisplayName("the prefix applies to @RestController only")
     void configurePathMatching_shouldTargetRestControllersOnly() {
         PathMatchConfigurer configurer = mock(PathMatchConfigurer.class);
         ArgumentCaptor<HandlerTypePredicate> predicate =

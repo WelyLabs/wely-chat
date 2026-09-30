@@ -4,6 +4,8 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -41,7 +43,9 @@ public class ConversationController {
 
         return chatService.readPreviousMessages(conversationId, bucketIndex, userId)
                 .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+                // An empty 404 tells a client nothing: an RFC 7807 response carries a
+                // stable code it can branch on.
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.MESSAGE_PAGE_NOT_FOUND)));
     }
 
     @GetMapping("{conversationId}")
@@ -52,7 +56,7 @@ public class ConversationController {
 
         return chatService.readConversationById(conversationId, userId)
                 .map(ResponseEntity::ok)
-                .defaultIfEmpty(ResponseEntity.notFound().build());
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }
 
     @GetMapping("all")

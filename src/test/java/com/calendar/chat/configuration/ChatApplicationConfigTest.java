@@ -15,23 +15,23 @@ class ChatApplicationConfigTest {
     private final ChatApplicationConfig config = new ChatApplicationConfig();
 
     @Test
-    @DisplayName("le service de domaine est instancié à la main, depuis son port")
+    @DisplayName("the domain service is built by hand, from its port")
     void chatService_shouldBuildTheDomainServiceFromItsPort() {
         ChatRepository repository = mock(ChatRepository.class);
 
         ChatService service = config.chatService(repository);
 
-        // Pas de @Service sur ChatService : c'est ce qui le rend testable sans
-        // contexte Spring et garde le domaine libre de toute annotation framework.
+        // No @Service on ChatService: that is what makes it testable without a Spring
+        // context and keeps the domain free of framework annotations.
         assertThat(service).isNotNull();
         verifyNoInteractions(repository);
     }
 
     @Test
-    @DisplayName("les repositories scannés sont les réactifs, pas les impératifs")
+    @DisplayName("the scanned repositories are the reactive ones, not the imperative ones")
     void config_shouldEnableReactiveMongoRepositories() {
-        // @EnableMongoRepositories scannerait des repositories bloquants et
-        // désactiverait l'auto-configuration réactive du package.
+        // @EnableMongoRepositories would scan for blocking repositories and switch off
+        // the reactive auto-configuration for the package.
         EnableReactiveMongoRepositories annotation =
                 ChatApplicationConfig.class.getAnnotation(EnableReactiveMongoRepositories.class);
 

@@ -44,13 +44,13 @@ class RSocketSecurityConfigTest {
     }
 
     @Test
-    @DisplayName("un seul intercepteur : un second annulerait silencieusement celui-ci")
+    @DisplayName("a single interceptor: a second would silently override this one")
     void rsocketInterceptor_shouldBeTheOnlyOneDeclared() {
         assertThat(context.getBeansOfType(PayloadSocketAcceptorInterceptor.class)).hasSize(1);
     }
 
     @Test
-    @DisplayName("l'intercepteur est construit à partir du RSocketSecurity du contexte")
+    @DisplayName("the interceptor is built from the context's RSocketSecurity")
     void rsocketInterceptor_shouldBuildFromTheContextSecurity() {
         RSocketSecurityConfig config = context.getBean(RSocketSecurityConfig.class);
         RSocketSecurity rsocket = context.getBean(RSocketSecurity.class);
@@ -62,8 +62,8 @@ class RSocketSecurityConfigTest {
 
     @Test
     void context_shouldExposeRSocketSecurityAsAPrototype() {
-        // RSocketSecurity porte un état de construction : deux injections doivent donner
-        // deux instances, sinon la configuration d'un bean fuiterait dans l'autre.
+        // RSocketSecurity carries builder state: two injections must yield two
+        // instances, or one bean's configuration leaks into the other.
         assertThat(context.getBean(RSocketSecurity.class))
                 .isNotSameAs(context.getBean(RSocketSecurity.class));
     }

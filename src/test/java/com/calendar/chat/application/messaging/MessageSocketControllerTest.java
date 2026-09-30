@@ -39,13 +39,13 @@ class MessageSocketControllerTest {
     }
 
     @Test
-    @DisplayName("l'expéditeur vient du token, pas du payload envoyé par le client")
+    @DisplayName("the sender comes from the token, not from the client payload")
     void sendMessage_shouldTakeTheSenderFromTheToken() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(jwt.getClaimAsString("preferred_username")).thenReturn(SENDER_NAME);
         when(chatService.sendMessage(any(Message.class))).thenReturn(Mono.empty());
 
-        // Le client prétend être quelqu'un d'autre dans senderUsername : ignoré.
+        // The client claims someone else's name in senderUsername: ignored.
         ChatInputDTO input = new ChatInputDTO("attacker-claimed-name", "receiver-1", "conv-1", "hello");
 
         StepVerifier.create(controller.sendMessage(jwt, input)).verifyComplete();
@@ -73,12 +73,12 @@ class MessageSocketControllerTest {
         assertThat(message.receiverId()).isEqualTo("receiver-1");
         assertThat(message.conversationId()).isEqualTo("conv-1");
         assertThat(message.content()).isEqualTo("hello");
-        assertThat(message.id()).isNull();          // attribué à la persistance
+        assertThat(message.id()).isNull();          // assigned by the persistence layer
         assertThat(message.timestamp()).isNotNull();
     }
 
     @Test
-    @DisplayName("le flux ne délivre que les messages destinés à l'appelant")
+    @DisplayName("the stream only delivers messages addressed to the caller")
     void streamMessage_shouldScopeTheStreamToTheCaller() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", LocalDateTime.now());

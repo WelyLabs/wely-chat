@@ -67,10 +67,10 @@ class MongoChatRepositoryAdapterTest {
         return new MessageBucketEntity("b-" + index, CONVERSATION_ID, index, List.of());
     }
 
-    // --- contrôle d'accès -------------------------------------------------
+    // --- access control ---------------------------------------------------
 
     @Test
-    @DisplayName("postMessage n'écrit rien si l'expéditeur ne participe pas à la conversation")
+    @DisplayName("postMessage writes nothing when the sender is not in the conversation")
     void postMessage_shouldWriteNothingForNonParticipant() {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
@@ -83,7 +83,7 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("findById filtre sur la participation, pas après chargement")
+    @DisplayName("findById filters on participation in the query, not after loading")
     void findById_shouldQueryScopedByParticipant() {
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, "intruder"))
                 .thenReturn(Mono.empty());
@@ -95,7 +95,7 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("la lecture d'un bucket exige la participation avant de toucher au bucket")
+    @DisplayName("reading a bucket requires participation before the bucket is touched")
     void findBucket_shouldRequireParticipationFirst() {
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, "intruder"))
                 .thenReturn(Mono.empty());
@@ -106,10 +106,10 @@ class MongoChatRepositoryAdapterTest {
         verify(messageBucketRepository, never()).findByConversationIdAndBucketIndex(any(), any());
     }
 
-    // --- append atomique -------------------------------------------------
+    // --- atomic append ----------------------------------------------------
 
     @Test
-    @DisplayName("un bucket avec de la place reçoit un $push, sans réécriture du document")
+    @DisplayName("a bucket with room gets a $push, with no document rewrite")
     void postMessage_shouldPushIntoBucketWithRoom() {
         givenParticipantAndLatestBucket(0);
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
@@ -121,7 +121,7 @@ class MongoChatRepositoryAdapterTest {
 
         ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
         verify(mongoTemplate).updateFirst(any(Query.class), update.capture(), eq(MessageBucketEntity.class));
-        // Inspection par clés : toJson() exigerait un codec Mongo, absent en test unitaire.
+        // Inspected by key: toJson() would need a Mongo codec, absent in a unit test.
         Document pushed = update.getValue().getUpdateObject();
         assertThat(pushed).containsKey("$push");
         assertThat((Document) pushed.get("$push")).containsKey("messages");
@@ -131,7 +131,7 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("le $push est conditionné par la place restante dans le bucket")
+    @DisplayName("the $push is guarded by the room left in the bucket")
     void postMessage_shouldGuardPushOnRemainingRoom() {
         givenParticipantAndLatestBucket(0);
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
@@ -149,11 +149,11 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("un bucket plein déclenche la création du bucket suivant")
+    @DisplayName("a full bucket triggers creation of the next one")
     void postMessage_shouldRollOverWhenBucketFull() {
         givenParticipantAndLatestBucket(3);
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
-                .thenReturn(Mono.just(modified(0)));   // aucun document n'avait de place
+                .thenReturn(Mono.just(modified(0)));   // no document had room
         when(mongoTemplate.insert(any(MessageBucketEntity.class)))
                 .thenReturn(Mono.just(bucket(4)));
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
@@ -168,14 +168,14 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("une collision sur le bucket suivant est retentée contre le bucket créé par l'autre écrivain")
+    @DisplayName("a collision on the next bucket is retried against the one the other writer created")
     void postMessage_shouldRetryOnDuplicateKey() {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
                 .thenReturn(Mono.just(new ConversationEntity(
                         CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, LocalDateTime.now())));
 
-        // 1er passage : bucket 3 plein ; 2e passage : le bucket 4 du concurrent a de la place
+        // first pass: bucket 3 is full; second: the winner's bucket 4 has room
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
                 .thenReturn(Mono.just(bucket(3)), Mono.just(bucket(4)));
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
@@ -194,7 +194,7 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("l'aperçu de la conversation est mis à jour par $set, jamais par réécriture complète")
+    @DisplayName("the conversation preview is updated with $set, never by rewriting the document")
     void postMessage_shouldTouchConversationWithTargetedSet() {
         givenParticipantAndLatestBucket(0);
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
@@ -212,10 +212,10 @@ class MongoChatRepositoryAdapterTest {
         verify(conversationRepository, never()).save(any());
     }
 
-    // --- robustesse ------------------------------------------------------
+    // --- robustness -------------------------------------------------------
 
     @Test
-    @DisplayName("une conversation sans bucket initial se lit comme vide au lieu de disparaître")
+    @DisplayName("a conversation with no initial bucket reads as empty instead of vanishing")
     void findById_shouldTolerateMissingInitialBucket() {
         ConversationEntity conversation = new ConversationEntity(
                 CONVERSATION_ID, List.of(SENDER_ID), null, LocalDateTime.now());

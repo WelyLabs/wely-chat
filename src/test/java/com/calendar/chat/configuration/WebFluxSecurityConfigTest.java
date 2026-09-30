@@ -38,7 +38,7 @@ class WebFluxSecurityConfigTest {
     @MockitoBean
     private ReactiveJwtDecoder jwtDecoder;
 
-    /** Mocké pour que ce test porte sur la sécurité et non sur MongoDB. */
+    /** Mocked so this test covers security rather than MongoDB. */
     @MockitoBean
     private ChatRepository chatRepository;
 
@@ -57,7 +57,7 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
-    @DisplayName("l'historique d'une conversation n'est pas atteignable sans token")
+    @DisplayName("conversation history is unreachable without a token")
     void apiHttpSecurity_shouldRejectUnauthenticatedHistoryReads() {
         client().get().uri("/chat-service/conversations/conv-1/loadMessages?bucketIndex=0")
                 .exchange()
@@ -75,7 +75,7 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
-    @DisplayName("le préflight CORS reste ouvert, sinon le navigateur bloque tout")
+    @DisplayName("the CORS preflight stays open, or the browser blocks everything")
     void apiHttpSecurity_shouldAllowCorsPreflight() {
         client().options().uri("/chat-service/conversations/all")
                 .header("Origin", "http://localhost:4200")
@@ -86,17 +86,17 @@ class WebFluxSecurityConfigTest {
 
     @Test
     void apiHttpSecurity_shouldDeclareNoExemptBusinessPath() {
-        // Aucun chemin métier ne doit être en permitAll : tout est privé ici.
+        // No business path may be permitAll: everything here is private.
         client().get().uri("/chat-service/conversations?friendId=friend-1")
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
 
     @Test
-    @DisplayName("les probes de santé répondent sans token, sinon le kubelet voit 401")
+    @DisplayName("the health probes answer without a token, or the kubelet sees 401")
     void apiHttpSecurity_shouldExposeHealthProbesAnonymously() {
-        // Le kubelet ne porte pas de JWT. Si ces chemins exigeaient une authentification,
-        // la liveness échouerait en boucle et Kubernetes redémarrerait des pods sains.
+        // The kubelet carries no JWT. Were these paths to require authentication,
+        // liveness would fail in a loop and Kubernetes would restart healthy pods.
         client().get().uri("/actuator/health/liveness")
                 .exchange()
                 .expectStatus().isOk();
@@ -107,7 +107,7 @@ class WebFluxSecurityConfigTest {
     }
 
     @Test
-    @DisplayName("le reste d'actuator n'est pas ouvert pour autant")
+    @DisplayName("the rest of actuator is not opened along with it")
     void apiHttpSecurity_shouldNotExposeTheRestOfActuator() {
         client().get().uri("/actuator/env")
                 .exchange()
