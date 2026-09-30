@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
@@ -71,6 +73,20 @@ class KafkaMessageBroadcasterIntegrationTest {
     @Container
     @ServiceConnection
     static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:3.8.0");
+
+    /**
+     * Points the binder at the container.
+     *
+     * <p>{@code @ServiceConnection} sets {@code spring.kafka.bootstrap-servers}, which the
+     * Spring Cloud Stream Kafka binder does not read: it has its own {@code brokers} property,
+     * and {@code application.properties} fills that from an environment variable Kubernetes
+     * injects. Left alone, the binder tried to connect to the literal
+     * {@code ${KAFKA_BOOTSTRAP_SERVER}:9092} and neither the consumer nor the producer bound.
+     */
+    @DynamicPropertySource
+    static void bindTheBrokerToTheBinder(DynamicPropertyRegistry registry) {
+        registry.add("spring.cloud.stream.kafka.binder.brokers", KAFKA::getBootstrapServers);
+    }
 
     static boolean containersRequested() {
         return System.getenv("CI") != null || Boolean.getBoolean("integration.tests");
