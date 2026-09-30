@@ -162,6 +162,23 @@ La réception passe par un **flux unique par utilisateur** (`chat.stream`), pas 
 
 ## API
 
+### OpenAPI
+
+La spécification est générée par `springdoc-openapi` et servie sans jeton :
+
+| | |
+|---|---|
+| Spec JSON | `http://localhost:8084/v3/api-docs` |
+| Swagger UI | `http://localhost:8084/swagger-ui.html` |
+
+Ces deux chemins ne sont **pas** routés par la gateway, et le Service est en `ClusterIP` : rien
+hors du cluster ne peut les atteindre. La documentation reste donc active en permanence — c'est
+la topologie réseau qui la protège, pas un drapeau.
+
+> Le préfixe de chemin du service est appliqué par package (`…application.rest`) et non par
+> annotation. Sélectionner sur `@RestController` attrapait aussi le contrôleur de springdoc, ce
+> qui déplaçait la spec en `/chat-service/v3/api-docs` derrière l'authentification.
+
 ### RSocket — routes
 
 | Route | Modèle | Description |
@@ -200,6 +217,40 @@ public record ConversationSummary(String id, ConversationType type, String title
 
 ---
 
+## Gestion des erreurs
+
+| Code | HTTP | Signification |
+|---|---|---|
+| `CHT-BUS-001` | 404 | Conversation introuvable **ou** n'appartenant pas à l'appelant |
+| `CHT-BUS-002` | 404 | Page d'historique inexistante à cet index |
+| `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
+| `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
+| `CHT-TEC-000` | 500 | Erreur inattendue |
+
+**`CHT-BUS-001` confond volontairement « inexistante » et « pas la tienne ».** Distinguer les
+deux permettrait d'énumérer les identifiants de conversation et d'apprendre lesquels existent.
+
+Toutes les réponses d'erreur sont des `ProblemDetail` (RFC 7807), avec un `code` stable qu'un
+client peut tester et un `timestamp` :
+
+```json
+{
+  "type": "https://welylabs.app/problems/cht-bus-001",
+  "title": "Conversation not found",
+  "status": 404,
+  "detail": "No conversation matches the given identifier for this user.",
+  "instance": "/chat-service/conversations/4a1b…",
+  "code": "CHT-BUS-001",
+  "timestamp": "2026-09-30T19:23:43.598673Z"
+}
+```
+
+> `CHT-REQ-000` rend le statut d'origine d'une `ResponseStatusException` — 404 sur un
+> chemin inconnu, 405 sur une méthode non autorisée. Sans lui, le handler `Exception.class`
+> les avalait toutes et **tout chemin inconnu répondait 500**. C'est le genre de défaut qu'un
+> test de route nominale ne voit jamais.
+
+---
 ## Configuration
 
 | Variable | Description |
