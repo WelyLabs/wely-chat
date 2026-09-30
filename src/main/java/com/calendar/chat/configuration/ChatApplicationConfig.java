@@ -1,6 +1,7 @@
 package com.calendar.chat.configuration;
 
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.services.ChatService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +16,8 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
 public class ChatApplicationConfig {
 
     @Bean
-    public ChatService chatService(ChatRepository chatRepository) {
-        return new ChatService(chatRepository);
+    public ChatService chatService(ChatRepository chatRepository,
+                                  MessageBroadcaster messageBroadcaster) {
+        return new ChatService(chatRepository, messageBroadcaster);
     }
 }

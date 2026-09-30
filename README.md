@@ -100,24 +100,27 @@ MongoDB stocke le nom de chaque champ dans chaque document : avec 50 messages pa
                               ┌──────────────────▼───────────────────┐
                               │              domain/                 │
                               │   services/ ChatService (POJO)       │
-                              │     └─ Sinks.Many<Message>  ⚠        │
                               │   models/   Message · MessageBucket  │
                               │             ConversationDetail       │
                               │             ConversationSummary      │
                               │   ports/    ChatRepository           │
-                              └──────────────────▲───────────────────┘
-                                                 │
-                              ┌──────────────────┴───────────────────┐
-                              │           infrastructure/            │
-                              │   MongoChatRepositoryAdapter         │
-                              │     → ConversationRepository         │
-                              │     → MessageBucketRepository        │
-                              └──────────────────┬───────────────────┘
-                                                 ▼
-                                             MongoDB
+                              │             MessageBroadcaster       │
+                              └────────▲──────────────────▲──────────┘
+                                       │                  │
+                    ┌──────────────────┴───┐   ┌──────────┴──────────────────┐
+                    │   infrastructure/    │   │      infrastructure/        │
+                    │ MongoChatRepository  │   │ KafkaMessageBroadcaster     │
+                    │   Adapter            │   │   ou LocalMessageBroadcaster│
+                    │  → ConversationRepo  │   │ MessageBroadcastConsumer    │
+                    │  → MessageBucketRepo │   └──────────┬──────────────────┘
+                    └──────────┬───────────┘              ▼
+                               ▼                 Kafka · MESSAGE_BROADCAST
+                           MongoDB
 ```
 
-⚠ Le `Sinks.Many` est local au processus — voir [Limites connues](#limites-connues).
+La diffusion est un **port du domaine**, pas un détail du service. `ChatService` ne connaît que
+`MessageBroadcaster` ; c'est `chat.broadcast.mode` qui décide, au démarrage, si l'implémentation
+est en mémoire ou passe par Kafka.
 
 ---
 
@@ -126,25 +129,32 @@ MongoDB stocke le nom de chaque champ dans chaque document : avec 50 messages pa
 ```mermaid
 sequenceDiagram
     participant A as Alice (navigateur)
-    participant S as wely-chat
+    participant S1 as wely-chat · pod 1
     participant DB as MongoDB
+    participant K as Kafka
+    participant S2 as wely-chat · pod 2
     participant B as Bob (navigateur)
 
-    Note over B,S: à la connexion
-    B->>S: RSocket request/stream · chat.stream
-    S-->>B: Flux<Message> filtré sur receiverId
+    Note over B,S2: à la connexion — Bob atterrit sur un pod quelconque
+    B->>S2: RSocket request/stream · chat.stream
+    S2-->>B: Flux<Message> filtré sur receiverId
 
-    Note over A,S: envoi
-    A->>S: RSocket request/response · chat.send
-    S->>S: sink.tryEmitNext(message)
-    S->>DB: append dans le bucket courant
+    Note over A,S1: envoi
+    A->>S1: RSocket request/response · chat.send
+    S1->>DB: $push atomique dans le bucket courant
     alt bucket plein (50 messages)
-        S->>DB: création du bucket suivant
+        S1->>DB: création du bucket suivant
     end
-    S->>DB: mise à jour de conversation.lastMessage
-    S-->>B: message poussé via le flux
-    S-->>A: acquittement
+    S1->>DB: mise à jour de conversation.lastMessage
+    S1->>K: publication sur MESSAGE_BROADCAST
+    S1-->>A: acquittement
+    K-->>S2: chaque pod est son propre groupe, donc reçoit l'enregistrement
+    K-->>S1: (y compris celui qui l'a émis)
+    S2-->>B: message poussé via le flux
 ```
+
+L'ordre compte : la persistance **avant** la diffusion. Diffuser d'abord ferait apparaître chez
+le destinataire un message qu'une écriture en échec n'aurait jamais enregistré.
 
 La réception passe par un **flux unique par utilisateur** (`chat.stream`), pas par un flux par conversation : un seul abonnement RSocket suffit à recevoir tous les messages, quelle que soit la conversation ouverte.
 
@@ -197,6 +207,47 @@ public record ConversationSummary(String id, ConversationType type, String title
 | `MONGODB_URI` | URI de connexion MongoDB |
 | `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
 | `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
+| `CHAT_BROADCAST_MODE` | `kafka` (défaut) ou `local` — voir ci-dessous |
+| `CHAT_BROADCAST_TOPIC` | Topic de diffusion, `MESSAGE_BROADCAST` par défaut |
+| `KAFKA_BOOTSTRAP_SERVER` | Broker, en mode `kafka` uniquement |
+| `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL/PLAIN |
+| `HOSTNAME` | Nom du pod, fourni par Kubernetes ; sert à nommer le groupe de consommation |
+
+---
+
+## Diffusion des messages
+
+Un message doit atteindre son destinataire **quel que soit le pod** sur lequel celui-ci a ouvert
+son flux RSocket. Deux implémentations du port `MessageBroadcaster` répondent à ce besoin,
+choisies par `chat.broadcast.mode` :
+
+| Mode | Implémentation | Valide à |
+|---|---|---|
+| `local` | `LocalMessageBroadcaster` — `Sinks.Many` en mémoire | 1 réplica |
+| `kafka` | `KafkaMessageBroadcaster` + `MessageBroadcastConsumer` | n réplicas |
+
+**Le piège, en mode `kafka` :** Kafka répartit les enregistrements d'une partition entre les
+membres d'un groupe de consommation — exactement un membre reçoit chaque enregistrement. C'est
+ce qu'on veut pour une file de travail, et précisément ce qu'on ne veut pas ici : avec tous les
+pods dans un même groupe, un message n'atteindrait qu'un pod, et que ce soit celui du
+destinataire relèverait du hasard.
+
+Chaque instance est donc **son propre groupe** (`chat-${HOSTNAME}`), ce qui la fait recevoir
+tous les enregistrements. La contrepartie à assumer : le topic doit être en rétention courte et
+sans compaction, puisque ces groupes sont jetables et que leurs offsets s'accumulent.
+
+La diffusion reste au **mieux-effort**. C'est un canal de mise à jour temps réel, pas la source
+de vérité : le message est déjà en base avant d'être diffusé, et un client qui a raté une frame
+recharge la conversation. Exiger des acquittements et du rejeu pour une copie qui existe déjà
+serait payer cher un problème qui n'existe pas.
+
+Le topic n'est pas créé automatiquement (`auto-create-topics=false`). Avant un déploiement :
+
+```bash
+# un topic par environnement : dev et prod partagent le même cluster Confluent
+kafka-topics --create --topic MESSAGE_BROADCAST     --partitions 3 --config retention.ms=300000
+kafka-topics --create --topic DEV_MESSAGE_BROADCAST --partitions 3 --config retention.ms=300000
+```
 
 ---
 
@@ -230,13 +281,16 @@ kubectl apply -k overlays/local --server-side
 
 ## Limites connues
 
-Ce service concentre les chantiers les plus intéressants du projet.
-
-- **Le fan-out ne franchit pas la frontière du processus.** `ChatService` diffuse les messages via un `Sinks.Many` en mémoire : au-delà d'un réplica, un message émis sur un pod n'atteint pas un destinataire connecté à un autre. Le correctif est un topic Kafka ou Redis Pub/Sub — l'infrastructure Kafka est déjà en place pour `USER_CREATED`.
-- **L'ajout dans un bucket n'est pas atomique.** La séquence lecture → ajout en mémoire → sauvegarde du document complet expose à une perte de message si deux envois se croisent. À remplacer par un `$push` conditionné côté MongoDB.
-- **Le message est diffusé avant d'être persisté.** Si l'écriture échoue, le destinataire a vu un message absent de la base. L'ordre doit être inversé.
-- **`directBestEffort()` abandonne silencieusement.** Le résultat de `tryEmitNext` n'est pas vérifié : une émission perdue ne laisse aucune trace.
-- **`@Transactional` est inopérant** : aucun `ReactiveMongoTransactionManager` n'est déclaré, la création conversation + bucket initial n'est donc pas atomique.
-- **Pas de gestion d'erreurs.** Contrairement à `wely-users` et `wely-social`, ce service n'a ni hiérarchie d'exceptions ni `@ControllerAdvice`.
-- **Couverture de test insuffisante** : une seule classe de test active pour 25 classes de production (`ChatApplicationTests` est entièrement commentée), alors que c'est le service le plus exposé aux problèmes de concurrence.
-- **Logs trop verbeux** : `io.rsocket.FrameLogger` est en `DEBUG`, ce qui journalise chaque frame.
+- **La diffusion est au mieux-effort.** Un enregistrement perdu coûte un rafraîchissement, pas
+  un message : le choix est assumé et documenté plus haut. Une garantie *at-least-once*
+  demanderait un outbox côté producteur.
+- **`@Transactional` est inopérant** : aucun `ReactiveMongoTransactionManager` n'est déclaré, la
+  création conversation + bucket initial n'est donc pas atomique. L'ajout d'un message, lui, l'est
+  désormais — c'est un `$push` conditionné sur l'absence de `messages.49`.
+- **Les groupes de consommation s'accumulent.** Un groupe par pod, jetable : chaque redémarrage
+  en laisse un derrière lui. Sans rétention courte sur le topic, ces offsets s'empilent côté
+  broker ; une purge périodique des groupes inactifs reste à mettre en place.
+- **`ConversationType` prévoit `GROUP` et `EVENT`**, seul `DIRECT` est implémenté.
+- **Pas de test d'intégration.** Les adaptateurs MongoDB et Kafka sont testés contre des doubles ;
+  Testcontainers validerait le `$push` conditionné et le round-trip Kafka contre de vraies
+  instances. C'est le chantier suivant sur ce service.

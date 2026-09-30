@@ -40,6 +40,17 @@
 		<sonar.tests>src/test/java</sonar.tests>
 		<sonar.java.source>25</sonar.java.source>
 	</properties>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.cloud</groupId>
+				<artifactId>spring-cloud-dependencies</artifactId>
+				<version>2025.1.0</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 		<!-- Expose /actuator/health/{liveness,readiness} for the Kubernetes probes. -->
 		<dependency>
@@ -80,10 +91,11 @@
             <artifactId>mapstruct</artifactId>
             <version>${org.mapstruct.version}</version>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.cloud</groupId>-->
-<!--            <artifactId>spring-cloud-starter-stream-kafka</artifactId>-->
-<!--        </dependency>-->
+        <!-- Fans messages out across instances; see KafkaMessageBroadcaster. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-stream-kafka</artifactId>
+        </dependency>
 <!--		<dependency>-->
 <!--			<groupId>org.springframework.security</groupId>-->
 <!--			<artifactId>spring-security-messaging</artifactId>-->

@@ -1,6 +1,7 @@
 package com.calendar.chat.configuration;
 
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.services.ChatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,13 +19,14 @@ class ChatApplicationConfigTest {
     @DisplayName("the domain service is built by hand, from its port")
     void chatService_shouldBuildTheDomainServiceFromItsPort() {
         ChatRepository repository = mock(ChatRepository.class);
+        MessageBroadcaster broadcaster = mock(MessageBroadcaster.class);
 
-        ChatService service = config.chatService(repository);
+        ChatService service = config.chatService(repository, broadcaster);
 
         // No @Service on ChatService: that is what makes it testable without a Spring
         // context and keeps the domain free of framework annotations.
         assertThat(service).isNotNull();
-        verifyNoInteractions(repository);
+        verifyNoInteractions(repository, broadcaster);
     }
 
     @Test
