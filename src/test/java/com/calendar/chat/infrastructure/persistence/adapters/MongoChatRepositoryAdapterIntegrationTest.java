@@ -42,7 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * taking the build with it. A check that cannot answer quickly is not a useful guard.
  */
 @Testcontainers
-@SpringBootTest
+// The shared test profile turns index creation off, because the other tests have no database to
+// create indexes in. Here there is one, and the index is the subject: without it MongoDB accepts
+// a second bucket with the same index, and two concurrent writers fork a conversation's history.
+// The first run of this class proved exactly that — both failures traced back to this one line.
+@SpringBootTest(properties = "spring.data.mongodb.auto-index-creation=true")
 @ActiveProfiles("test")
 @EnabledIf("containersRequested")
 class MongoChatRepositoryAdapterIntegrationTest {
@@ -241,7 +245,9 @@ class MongoChatRepositoryAdapterIntegrationTest {
     @DisplayName("the compound index really forbids two buckets with the same index")
     void compoundIndex_shouldBeUniquePerConversationAndBucket() {
         // What makes the duplicate-key retry in appendToLatestBucket meaningful. Without the
-        // index MongoDB accepts the second insert and two writers silently fork the history.
+        // index MongoDB accepts the second insert and two writers silently fork the history —
+        // which is not a hypothesis: the first run of this class had index creation disabled,
+        // and the concurrency test above failed with "returned non unique result".
         ConversationDetail conversation = aConversation();
         MessageBucketEntity duplicate = new MessageBucketEntity(
                 null, conversation.getId(), 0, new java.util.ArrayList<>());
