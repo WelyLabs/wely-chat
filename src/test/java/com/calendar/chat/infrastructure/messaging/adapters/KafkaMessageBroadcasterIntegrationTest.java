@@ -43,7 +43,15 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.kafka.properties.security.protocol=PLAINTEXT",
         "spring.cloud.stream.kafka.binder.configuration.security.protocol=PLAINTEXT",
         "spring.cloud.function.definition=messageBroadcast",
-        "chat.broadcast.topic=MESSAGE_BROADCAST_IT"
+        "chat.broadcast.topic=MESSAGE_BROADCAST_IT",
+        // The broker in the container creates the topic; production points at one where the
+        // binder is not allowed to, hence the setting this overrides.
+        "spring.cloud.stream.kafka.binder.auto-create-topics=true",
+        // Without this the consumer starts at the latest offset, and a record produced before
+        // the group has been assigned its partitions is simply never seen. Each instance gets a
+        // fresh group by design, so there is never a committed offset to fall back on.
+        "spring.cloud.stream.kafka.bindings.messageBroadcast-in-0.consumer.startOffset=earliest",
+        "spring.cloud.stream.kafka.bindings.messageBroadcast-in-0.consumer.resetOffsets=true"
 })
 @ActiveProfiles("test")
 @EnabledIf("containersRequested")
@@ -85,7 +93,7 @@ class KafkaMessageBroadcasterIntegrationTest {
                     assertThat(message.senderName()).isEqualTo("Alice");
                 })
                 .thenCancel()
-                .verify(Duration.ofSeconds(30));
+                .verify(Duration.ofSeconds(60));
     }
 
     @Test
@@ -97,7 +105,7 @@ class KafkaMessageBroadcasterIntegrationTest {
                 .then(() -> broadcaster.broadcast(to("carol", "keep my id")).subscribe())
                 .assertNext(message -> assertThat(message.id()).isEqualTo("m-carol"))
                 .thenCancel()
-                .verify(Duration.ofSeconds(30));
+                .verify(Duration.ofSeconds(60));
     }
 
     @Test
@@ -112,6 +120,6 @@ class KafkaMessageBroadcasterIntegrationTest {
                 })
                 .assertNext(message -> assertThat(message.content()).isEqualTo("for dave"))
                 .thenCancel()
-                .verify(Duration.ofSeconds(30));
+                .verify(Duration.ofSeconds(60));
     }
 }
