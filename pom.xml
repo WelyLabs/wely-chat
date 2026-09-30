@@ -39,9 +39,19 @@
 		<sonar.sources>src/main/java</sonar.sources>
 		<sonar.tests>src/test/java</sonar.tests>
 		<sonar.java.source>25</sonar.java.source>
+		<testcontainers.version>1.20.4</testcontainers.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
+			<!-- Boot 4's BOM does not manage the Testcontainers modules, so their versions
+			     come from here rather than being pinned one by one. -->
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<dependency>
 				<groupId>org.springframework.cloud</groupId>
 				<artifactId>spring-cloud-dependencies</artifactId>
@@ -146,6 +156,27 @@
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<!--
+			Integration tests run the adapters against a real MongoDB in a container. Versions
+			come from the Spring Boot BOM, so none is pinned here. The tests skip themselves
+			when no container runtime is reachable, so a workstation without Docker still runs
+			the rest of the suite — see MongoChatRepositoryAdapterIntegrationTest.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>mongodb</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
