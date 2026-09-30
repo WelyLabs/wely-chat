@@ -2,6 +2,7 @@ package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -18,6 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -70,10 +74,19 @@ class MongoChatRepositoryAdapterIntegrationTest {
     private static final String BOB = "bob";
     private static final String MALLORY = "mallory";
 
+    /**
+     * Empties the collections without dropping them.
+     *
+     * <p>Dropping takes the indexes with it, and Spring Data creates them once, lazily, when the
+     * entity is first resolved — so a dropped collection comes back unindexed for every test
+     * after the first. That is what made the two index-dependent cases here fail even with
+     * auto-index-creation switched on.
+     */
     @BeforeEach
     void clearDatabase() {
-        mongoTemplate.getCollectionNames()
-                .flatMap(name -> mongoTemplate.dropCollection(name))
+        Query all = new Query();
+        mongoTemplate.remove(all, MessageBucketEntity.class)
+                .then(mongoTemplate.remove(all, ConversationEntity.class))
                 .then()
                 .block();
     }
@@ -88,9 +101,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
     private long bucketCount(String conversationId) {
         return mongoTemplate.find(
-                        org.springframework.data.mongodb.core.query.Query.query(
-                                org.springframework.data.mongodb.core.query.Criteria
-                                        .where("conversationId").is(conversationId)),
+                        Query.query(Criteria.where("conversationId").is(conversationId)),
                         MessageBucketEntity.class)
                 .count().block();
     }
@@ -250,7 +261,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         // and the concurrency test above failed with "returned non unique result".
         ConversationDetail conversation = aConversation();
         MessageBucketEntity duplicate = new MessageBucketEntity(
-                null, conversation.getId(), 0, new java.util.ArrayList<>());
+                null, conversation.getId(), 0, new ArrayList<>());
 
         StepVerifier.create(mongoTemplate.insert(duplicate))
                 .expectError(org.springframework.dao.DuplicateKeyException.class)
