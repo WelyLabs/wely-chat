@@ -3,10 +3,12 @@ package com.calendar.chat.exception;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 class GlobalErrorHandlerTest {
@@ -29,6 +31,16 @@ class GlobalErrorHandlerTest {
         @GetMapping("/generic-error")
         Mono<Void> genericError() {
             return Mono.error(new IllegalStateException("mongodb://admin:hunter2@host/events"));
+        }
+
+        @GetMapping("/gone")
+        Mono<Void> gone() {
+            return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND));
+        }
+
+        @GetMapping("/not-allowed")
+        Mono<Void> notAllowed() {
+            return Mono.error(new ResponseStatusException(HttpStatus.METHOD_NOT_ALLOWED));
         }
     }
 
@@ -82,4 +94,33 @@ class GlobalErrorHandlerTest {
                     }
                 });
     }
+
+    @Test
+    @DisplayName("an unknown path keeps its 404 instead of becoming a 500")
+    void handleResponseStatusException_shouldKeepTheOriginalStatus() {
+        // The regression this guards: @ExceptionHandler(Exception.class) also catches
+        // ResponseStatusException, so before CHT-REQ-000 existed every unknown path answered
+        // 500. The service reported a fault of its own for a request it had handled correctly.
+        client.get().uri("/gone")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectHeader().contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404)
+                .jsonPath("$.title").isEqualTo("Not Found")
+                .jsonPath("$.code").isEqualTo("CHT-REQ-000");
+    }
+
+    @Test
+    @DisplayName("a rejected method keeps its 405")
+    void handleResponseStatusException_shouldCarryAnyStatusThrough() {
+        client.get().uri("/not-allowed")
+                .exchange()
+                .expectStatus().isEqualTo(405)
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(405)
+                .jsonPath("$.title").isEqualTo("Method Not Allowed")
+                .jsonPath("$.code").isEqualTo("CHT-REQ-000");
+    }
+
 }
