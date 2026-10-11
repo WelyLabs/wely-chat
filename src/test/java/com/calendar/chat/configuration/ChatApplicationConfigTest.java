@@ -2,6 +2,8 @@ package com.calendar.chat.configuration;
 
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
+import com.calendar.chat.domain.ports.PresenceRepository;
+import com.calendar.chat.domain.services.PresenceService;
 import com.calendar.chat.domain.services.ChatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,18 @@ class ChatApplicationConfigTest {
         // context and keeps the domain free of framework annotations.
         assertThat(service).isNotNull();
         verifyNoInteractions(repository, broadcaster);
+    }
+
+    @Test
+    @DisplayName("the presence service is built by hand too, from its ports")
+    void presenceService_shouldBuildTheDomainServiceFromItsPorts() {
+        PresenceRepository presence = mock(PresenceRepository.class);
+        ChatRepository chats = mock(ChatRepository.class);
+
+        PresenceService service = config.presenceService(presence, chats, "pod-1");
+
+        assertThat(service).isNotNull();
+        verifyNoInteractions(presence, chats);
     }
 
     @Test

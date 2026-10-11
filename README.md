@@ -198,6 +198,7 @@ Préfixées par `/chat-service`, exposées sur `/api/v1/chat-service/**`.
 | `GET` | `/conversations/all` | Liste des conversations de l'utilisateur, avec aperçu du dernier message |
 | `GET` | `/conversations/{id}` | Détail d'une conversation (dernier bucket de messages) |
 | `GET` | `/conversations/{id}/loadMessages?bucketIndex=` | Remonte l'historique, bucket par bucket |
+| `GET` | `/presence/{userId}` | En ligne ou pas, et vu pour la dernière fois quand — seulement pour quelqu'un avec qui on a une conversation |
 
 ### Modèles
 
@@ -223,6 +224,7 @@ public record ConversationSummary(String id, ConversationType type, String title
 |---|---|---|
 | `CHT-BUS-001` | 404 | Conversation introuvable **ou** n'appartenant pas à l'appelant |
 | `CHT-BUS-002` | 404 | Page d'historique inexistante à cet index |
+| `CHT-BUS-003` | 404 | Présence indisponible : utilisateur inconnu **ou** sans conversation commune |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `CHT-TEC-000` | 500 | Erreur inattendue |
@@ -310,6 +312,23 @@ kafka-topics --create --topic DEV_MESSAGE_BROADCAST --partitions 3 --config rete
 ```
 
 ---
+
+## Présence (« En ligne »)
+
+Un utilisateur est **en ligne tant qu'il a un flux `chat.stream` ouvert**, sur n'importe quelle instance. Le service tourne à deux réplicas : une présence tenue en mémoire serait fausse une fois sur deux, elle est donc dans MongoDB, partagée.
+
+| Collection | Contenu | Durée de vie |
+|---|---|---|
+| `presence_connections` | Un document par flux ouvert : utilisateur, instance, dernier rafraîchissement | Supprimé à la fermeture du flux ; **index TTL de 2 min** sinon |
+| `last_seen` | Dernière fois où l'utilisateur a été vu connecté | Permanent |
+
+- **Ouverture et fermeture** — `PresenceService.track` enveloppe le flux avec `Flux.usingWhen` : la connexion est enregistrée à l'abonnement et retirée à la fin, que le flux se termine, échoue ou soit **annulé** (fermer l'appli annule le flux).
+- **Battement** — `PresenceHeartbeat` rafraîchit toutes les 30 s les connexions ouvertes sur l'instance, en une seule mise à jour. Un utilisateur est en ligne si l'une de ses connexions a été rafraîchie depuis moins de 90 s (trois battements : un battement manqué ne le fait pas clignoter).
+- **Instance plantée** — elle ne ferme pas ses connexions ; elles sortent de la fenêtre de 90 s, puis l'index TTL les supprime. Personne ne reste « en ligne » pour toujours.
+- **Best-effort** — si MongoDB refuse l'écriture, le flux s'ouvre quand même : le chat passe avant la présence.
+- **Confidentialité** — `GET /presence/{userId}` ne répond que si l'appelant partage une conversation avec cette personne. Sinon `CHT-BUS-003`, identique pour un utilisateur inconnu, pour qu'on ne puisse pas sonder la présence de n'importe qui.
+
+Le front relit la présence toutes les 30 s pendant qu'une conversation est ouverte et affiche « En ligne », « Vu à 14:32 », « Vu hier à 09:05 » ou « Vu le 3 oct. ».
 
 ## Démarrage
 

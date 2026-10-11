@@ -28,6 +28,16 @@ public enum ChatErrorCode {
             "CHT-BUS-002",
             "History page not found",
             "No message page exists at the given index for this conversation.",
+            HttpStatus.NOT_FOUND),
+
+    /**
+     * No presence for this user: unknown, or no conversation shared with the caller. One code
+     * for both, so presence cannot be probed for arbitrary user ids.
+     */
+    PRESENCE_NOT_FOUND(
+            "CHT-BUS-003",
+            "Presence not available",
+            "Presence is only shown for people you share a conversation with.",
             HttpStatus.NOT_FOUND);
 
     private final String code;

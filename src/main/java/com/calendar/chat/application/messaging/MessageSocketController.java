@@ -3,6 +3,7 @@ package com.calendar.chat.application.messaging;
 import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.PresenceService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -16,9 +17,11 @@ import java.time.LocalDateTime;
 public class MessageSocketController {
 
     private final ChatService chatService;
+    private final PresenceService presenceService;
 
-    public MessageSocketController(ChatService chatService) {
+    public MessageSocketController(ChatService chatService, PresenceService presenceService) {
         this.chatService = chatService;
+        this.presenceService = presenceService;
     }
 
     @MessageMapping("chat.send")
@@ -34,6 +37,7 @@ public class MessageSocketController {
     public Flux<Message> streamMessage(@AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getClaimAsString("businessId");
 
-        return chatService.streamMessages(userId);
+        // The user counts as online for as long as this stream is open.
+        return presenceService.track(userId, chatService.streamMessages(userId));
     }
 }

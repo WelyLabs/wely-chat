@@ -3,6 +3,7 @@ package com.calendar.chat.application.messaging;
 import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.PresenceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,13 +31,14 @@ class MessageSocketControllerTest {
     private static final String SENDER_NAME = "theo";
 
     @Mock private ChatService chatService;
+    @Mock private PresenceService presenceService;
     @Mock private Jwt jwt;
 
     private MessageSocketController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new MessageSocketController(chatService);
+        controller = new MessageSocketController(chatService, presenceService);
     }
 
     @Test
@@ -83,11 +86,25 @@ class MessageSocketControllerTest {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", LocalDateTime.now());
         when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.just(mine));
+        when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
 
         StepVerifier.create(controller.streamMessage(jwt))
                 .expectNext(mine)
                 .verifyComplete();
 
         verify(chatService).streamMessages(SENDER_ID);
+    }
+
+    @Test
+    @DisplayName("the caller counts as online while their stream is open")
+    void streamMessage_shouldTrackTheCallersPresence() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        Flux<Message> stream = Flux.empty();
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(stream);
+        when(presenceService.track(SENDER_ID, stream)).thenReturn(Flux.empty());
+
+        StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
+
+        verify(presenceService).track(SENDER_ID, stream);
     }
 }
