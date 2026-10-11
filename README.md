@@ -195,7 +195,7 @@ Préfixées par `/chat-service`, exposées sur `/api/v1/chat-service/**`.
 | Méthode | Route | Description |
 |---|---|---|
 | `GET` | `/conversations?friendId=` | Récupère **ou crée** la conversation avec cet ami |
-| `GET` | `/conversations/all` | Liste des conversations de l'utilisateur, avec aperçu du dernier message |
+| `GET` | `/conversations/all` | Liste des conversations de l'utilisateur : participants et aperçu du dernier message |
 | `GET` | `/conversations/{id}` | Détail d'une conversation (dernier bucket de messages) |
 | `GET` | `/conversations/{id}/loadMessages?bucketIndex=` | Remonte l'historique, bucket par bucket |
 | `GET` | `/presence/{userId}` | En ligne ou pas, et vu pour la dernière fois quand — seulement pour quelqu'un avec qui on a une conversation |

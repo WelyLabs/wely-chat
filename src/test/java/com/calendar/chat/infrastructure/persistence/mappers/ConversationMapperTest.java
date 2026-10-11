@@ -92,7 +92,7 @@ class ConversationMapperTest {
     @DisplayName("a summary becomes a conversation entity")
     void toConversationEntity_shouldMapTheSummary() {
         ConversationSummary summary = new ConversationSummary(
-                "conv-1", ConversationType.DIRECT, "Bob", SENT_AT, message());
+                "conv-1", List.of("alice", "bob"), ConversationType.DIRECT, "Bob", SENT_AT, message());
 
         ConversationEntity entity = mapper.toConversationEntity(summary);
 
@@ -112,6 +112,8 @@ class ConversationMapperTest {
         ConversationSummary summary = mapper.toConversationSummary(entity);
 
         assertThat(summary.id()).isEqualTo("conv-1");
+        // The client names a private conversation after the other participant.
+        assertThat(summary.participantIds()).containsExactly("alice", "bob");
         assertThat(summary.updatedAt()).isEqualTo(SENT_AT);
         assertThat(summary.lastMessage().content()).isEqualTo("hello");
     }

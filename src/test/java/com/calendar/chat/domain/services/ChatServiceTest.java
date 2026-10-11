@@ -181,7 +181,7 @@ class ChatServiceTest {
     @Test
     void readConversations_Success() {
         String userId = "user1";
-        ConversationSummary summary = new ConversationSummary(UUID.randomUUID().toString(), null, "Title",
+        ConversationSummary summary = new ConversationSummary(UUID.randomUUID().toString(), List.of("user1", "user2"), null, "Title",
                 LocalDateTime.now(), null);
 
         when(chatRepository.findUserConversations(userId)).thenReturn(Flux.just(summary));

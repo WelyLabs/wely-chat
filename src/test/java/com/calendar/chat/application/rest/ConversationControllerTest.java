@@ -142,7 +142,7 @@ class ConversationControllerTest {
     void getConversations_shouldListOnlyTheCallersConversations() {
         givenAuthenticatedCaller();
         ConversationSummary summary =
-                new ConversationSummary(CONVERSATION_ID, null, "Title", LocalDateTime.now(), null);
+                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", LocalDateTime.now(), null);
         when(chatService.readConversations(CALLER_ID)).thenReturn(Flux.just(summary));
 
         var response = controller.getConversations(jwt);
