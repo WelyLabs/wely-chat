@@ -59,11 +59,6 @@ public class GlobalErrorHandler {
     }
 
     /**
-     * Last resort. The detail is deliberately generic: an exception message can carry a
-     * query, a constraint name or a host, and none of that belongs in a response. The real
-     * message goes to the logs, where the timestamp ties the two together.
-     */
-    /**
      * Statuses the framework itself decided: an unknown path, a method that does not apply, a
      * body it cannot read.
      *
@@ -82,6 +77,11 @@ public class GlobalErrorHandler {
                 "The request could not be served as sent.", exchange);
     }
 
+    /**
+     * Last resort. The detail is deliberately generic: an exception message can carry a
+     * query, a constraint name or a host, and none of that belongs in a response. The real
+     * message goes to the logs, where the timestamp ties the two together.
+     */
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleUnexpectedException(Exception ex, ServerWebExchange exchange) {
         log.error("Unhandled failure on {}", exchange.getRequest().getPath(), ex);
