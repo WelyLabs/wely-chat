@@ -1,6 +1,6 @@
 package com.calendar.chat.infrastructure.messaging.models;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * A message as it travels over the broker.
@@ -16,5 +16,5 @@ public record MessageBroadcastDTO(
         String receiverId,
         String conversationId,
         String content,
-        LocalDateTime timestamp
+        Instant timestamp
 ) {}

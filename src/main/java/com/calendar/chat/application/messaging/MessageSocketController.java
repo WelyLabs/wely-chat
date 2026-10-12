@@ -11,7 +11,7 @@ import org.springframework.stereotype.Controller;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Controller
 public class MessageSocketController {
@@ -30,7 +30,7 @@ public class MessageSocketController {
         String userId = jwt.getClaimAsString("businessId");
         String username = jwt.getClaimAsString("preferred_username");
 
-        Message message = new Message(null, userId, username, chatInputDTO.receiverId(), chatInputDTO.conversationId(), chatInputDTO.content(), LocalDateTime.now());
+        Message message = new Message(null, userId, username, chatInputDTO.receiverId(), chatInputDTO.conversationId(), chatInputDTO.content(), Instant.now());
         return chatService.sendMessage(message);
     }
 

@@ -1,6 +1,6 @@
 package com.calendar.chat.domain.models;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record Message(
         String id,
@@ -9,5 +9,5 @@ public record Message(
         String receiverId,
         String conversationId,
         String content,
-        LocalDateTime timestamp
+        Instant timestamp
 ) {}

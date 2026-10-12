@@ -6,7 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 class LocalMessageBroadcasterTest {
 
@@ -19,7 +19,7 @@ class LocalMessageBroadcasterTest {
 
     private static Message to(String receiverId) {
         return new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
-                LocalDateTime.now());
+                Instant.now());
     }
 
     @Test
@@ -45,7 +45,7 @@ class LocalMessageBroadcasterTest {
         // The previous filter called receiverId().equals(userId), which throws on a message
         // whose recipient is absent and kills every subscriber's stream with it.
         Message withoutRecipient = new Message("m-1", "sender", "Sender", null, "conv-1", "hi",
-                LocalDateTime.now());
+                Instant.now());
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> {

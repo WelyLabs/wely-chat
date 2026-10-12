@@ -16,7 +16,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -84,7 +84,7 @@ class MessageSocketControllerTest {
     @DisplayName("the stream only delivers messages addressed to the caller")
     void streamMessage_shouldScopeTheStreamToTheCaller() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
-        Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", LocalDateTime.now());
+        Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", Instant.now());
         when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.just(mine));
         when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
 

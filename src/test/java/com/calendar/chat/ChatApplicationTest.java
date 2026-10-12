@@ -1,5 +1,6 @@
 package com.calendar.chat;
 
+import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.services.ChatService;
@@ -11,6 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
+import tools.jackson.databind.ObjectMapper;
+
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -57,5 +61,20 @@ class ChatApplicationTest {
     @Test
     void contextShouldNotConsumeEventGroupsWithoutABroker() {
         assertThat(context.getBeansOfType(EventGroupConsumer.class)).isEmpty();
+    }
+
+    /**
+     * A message time leaves as an instant with its zone. It used to be a LocalDateTime taken in a
+     * UTC container and written without one, which the browser read as local time: every message
+     * reloaded from history showed one or two hours early in Paris.
+     */
+    @Test
+    void json_shouldWriteAMessageTimeWithItsZone() throws Exception {
+        Message message = new Message(null, "ines", "ines", "me", "conv-1", "hi",
+                Instant.parse("2026-10-12T23:44:46Z"));
+
+        String json = context.getBean(ObjectMapper.class).writeValueAsString(message);
+
+        assertThat(json).contains("\"timestamp\":\"2026-10-12T23:44:46Z\"");
     }
 }

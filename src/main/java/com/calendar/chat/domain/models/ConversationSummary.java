@@ -1,6 +1,6 @@
 package com.calendar.chat.domain.models;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -15,7 +15,7 @@ public record ConversationSummary(
     List<String> participantIds,
     ConversationType type,
     String title,
-    LocalDateTime updatedAt,
+    Instant updatedAt,
     Message lastMessage,
     String eventId
 ) { }

@@ -17,7 +17,7 @@ import org.testcontainers.kafka.KafkaContainer;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -97,7 +97,7 @@ class KafkaMessageBroadcasterIntegrationTest {
 
     private static Message to(String receiverId, String content) {
         return new Message("m-" + receiverId, "alice", "Alice", receiverId, "conv-1", content,
-                LocalDateTime.now());
+                Instant.now());
     }
 
     @Test

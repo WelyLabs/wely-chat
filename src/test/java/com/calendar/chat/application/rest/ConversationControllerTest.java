@@ -18,7 +18,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -167,7 +167,7 @@ class ConversationControllerTest {
     void getConversations_shouldListOnlyTheCallersConversations() {
         givenAuthenticatedCaller();
         ConversationSummary summary =
-                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", LocalDateTime.now(), null, null);
+                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", Instant.now(), null, null);
         when(chatService.readConversations(CALLER_ID)).thenReturn(Flux.just(summary));
 
         var response = controller.getConversations(jwt);

@@ -20,7 +20,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -75,7 +75,7 @@ class ChatServiceTest {
 
     private static Message messageFrom(String senderId) {
         return new Message(null, senderId, "Caller", "whoever-the-client-said",
-                "conv-1", "hello", LocalDateTime.of(2026, 10, 12, 19, 0));
+                "conv-1", "hello", Instant.parse("2026-10-12T19:00:00Z"));
     }
 
     private static Message addressedTo(Message message, String recipientId) {
@@ -147,7 +147,7 @@ class ChatServiceTest {
     void streamMessages_shouldDelegateToTheBroadcaster() {
         String userId = "user1";
         Message message = new Message(UUID.randomUUID().toString(), "caller", "Caller", userId,
-                UUID.randomUUID().toString(), "hello", LocalDateTime.now());
+                UUID.randomUUID().toString(), "hello", Instant.now());
 
         // The service no longer owns a sink. That sink was local to one JVM, so a message
         // accepted by one pod never reached a recipient connected to another.
@@ -210,7 +210,7 @@ class ChatServiceTest {
     void readConversations_Success() {
         String userId = "user1";
         ConversationSummary summary = new ConversationSummary(UUID.randomUUID().toString(), List.of("user1", "user2"), null, "Title",
-                LocalDateTime.now(), null, null);
+                Instant.now(), null, null);
 
         when(chatRepository.findUserConversations(userId)).thenReturn(Flux.just(summary));
 
