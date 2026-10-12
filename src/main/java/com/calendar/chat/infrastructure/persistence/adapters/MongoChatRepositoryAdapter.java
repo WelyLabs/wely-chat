@@ -2,6 +2,8 @@ package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.ConversationType;
+import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -29,6 +31,8 @@ import static com.calendar.chat.infrastructure.persistence.models.entities.Messa
 @Component
 public class MongoChatRepositoryAdapter implements ChatRepository {
 
+    private static final int NO_BUCKET = -1;
+
     private final ConversationRepository conversationRepository;
     private final MessageBucketRepository messageBucketRepository;
     private final ConversationMapper conversationMapper;
@@ -48,7 +52,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     public Mono<ConversationDetail> saveWithInitialBucket(List<String> participantIds) {
 
         ConversationEntity conversationEntityToSave =
-                new ConversationEntity(null, participantIds, null, LocalDateTime.now());
+                ConversationEntity.direct(null, participantIds, null, LocalDateTime.now());
 
         return conversationRepository.save(conversationEntityToSave)
                 .flatMap(conversationEntity -> {
@@ -123,14 +127,14 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
      * overwriting the first message.
      */
     @Override
-    public Mono<Void> postMessage(Message message) {
+    public Mono<List<String>> postMessage(Message message) {
         MessageEntity messageEntity = conversationMapper.toMessageEntity(message);
 
         return conversationRepository
                 .findByIdAndParticipantIdsContaining(message.conversationId(), message.senderId())
                 .flatMap(conversation -> appendToLatestBucket(message.conversationId(), messageEntity)
-                        .then(touchConversation(message.conversationId(), messageEntity)))
-                .then();
+                        .then(touchConversation(message.conversationId(), messageEntity))
+                        .thenReturn(List.copyOf(conversation.getParticipantIds())));
     }
 
     /**
@@ -145,10 +149,16 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
      */
     private Mono<Void> appendToLatestBucket(String conversationId, MessageEntity messageEntity) {
         return messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(conversationId)
-                .flatMap(latest -> pushInto(conversationId, latest.getBucketIndex(), messageEntity)
-                        .flatMap(appended -> Boolean.TRUE.equals(appended)
-                                ? Mono.empty()
-                                : createNextBucket(conversationId, latest.getBucketIndex() + 1, messageEntity)))
+                .map(MessageBucketEntity::getBucketIndex)
+                // No bucket at all — an event group gets its first with its first message. Without
+                // this, the flatMap below had nothing to run on and the message vanished.
+                .defaultIfEmpty(NO_BUCKET)
+                .flatMap(latest -> latest == NO_BUCKET
+                        ? createNextBucket(conversationId, 0, messageEntity)
+                        : pushInto(conversationId, latest, messageEntity)
+                                .flatMap(appended -> Boolean.TRUE.equals(appended)
+                                        ? Mono.<Void>empty()
+                                        : createNextBucket(conversationId, latest + 1, messageEntity)))
                 .onErrorResume(DuplicateKeyException.class,
                         e -> appendToLatestBucket(conversationId, messageEntity))
                 .then();
@@ -198,7 +208,33 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
 
     @Override
     public Flux<ConversationSummary> findUserConversations(String userId) {
-        return conversationRepository.findByParticipantIdsContaining(userId)
+        return conversationRepository.findListedByParticipant(userId)
                 .map(conversationMapper::toConversationSummary);
+    }
+
+    @Override
+    public Mono<ConversationDetail> findByEventId(String eventId, String requesterId) {
+        return conversationRepository.findByEventIdAndParticipantIdsContaining(eventId, requesterId)
+                .flatMap(this::loadConversationWithMessages);
+    }
+
+    /**
+     * Updates the group when the stored list is older; otherwise inserts it. The insert failing on
+     * the unique event id means the group exists with this version or a newer one — a replay or a
+     * record overtaken by a later one — and there is nothing to do.
+     *
+     * <p>No first bucket is written: the first message creates it (see {@link #appendToLatestBucket}),
+     * and most groups never get one.
+     */
+    @Override
+    public Mono<Void> saveEventGroup(EventGroup group) {
+        return conversationRepository
+                .updateEventGroup(group.eventId(), group.version(), group.memberIds(), group.title())
+                .filter(updated -> updated == 0)
+                .flatMap(none -> conversationRepository.insert(new ConversationEntity(
+                        null, group.memberIds(), null, LocalDateTime.now(),
+                        ConversationType.EVENT.name(), group.eventId(), group.title(), group.version())))
+                .onErrorResume(DuplicateKeyException.class, stale -> Mono.empty())
+                .then();
     }
 }

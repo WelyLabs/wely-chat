@@ -2,6 +2,7 @@ package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -70,39 +71,50 @@ class ChatServiceTest {
                 .verifyComplete();
     }
 
+    private static Message messageFrom(String senderId) {
+        return new Message(null, senderId, "Caller", "whoever-the-client-said",
+                "conv-1", "hello", LocalDateTime.of(2026, 10, 12, 19, 0));
+    }
+
+    private static Message addressedTo(Message message, String recipientId) {
+        return new Message(message.id(), message.senderId(), message.senderName(), recipientId,
+                message.conversationId(), message.content(), message.timestamp());
+    }
+
     @Test
-    void sendMessage_Success() {
-        Message message = new Message(UUID.randomUUID().toString(), "caller", "Caller", "receiver",
-                UUID.randomUUID().toString(), "hello", LocalDateTime.now());
+    @DisplayName("a message reaches every other member, whoever the client named as receiver")
+    void sendMessage_shouldBroadcastToEveryOtherMember() {
+        Message message = messageFrom("caller");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines", "hugo")));
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
-        when(messageBroadcaster.broadcast(message)).thenReturn(Mono.empty());
+        StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
 
-        StepVerifier.create(chatService.sendMessage(message))
-                .verifyComplete();
+        verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
+        verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
+        verify(messageBroadcaster, never()).broadcast(addressedTo(message, "caller"));
+        verify(messageBroadcaster, never()).broadcast(message);
     }
 
     @Test
     @DisplayName("a message is persisted before it is broadcast, never the other way round")
     void sendMessage_shouldPersistBeforeBroadcasting() {
-        Message message = new Message(null, "caller", "Caller", "receiver",
-                UUID.randomUUID().toString(), "hello", LocalDateTime.now());
+        Message message = messageFrom("caller");
         InOrder order = inOrder(chatRepository, messageBroadcaster);
 
-        when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
-        when(messageBroadcaster.broadcast(message)).thenReturn(Mono.empty());
+        when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "friend")));
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
 
         order.verify(chatRepository).postMessage(message);
-        order.verify(messageBroadcaster).broadcast(message);
+        order.verify(messageBroadcaster).broadcast(addressedTo(message, "friend"));
     }
 
     @Test
     @DisplayName("a failed write is not broadcast: no message shown that does not exist")
     void sendMessage_shouldNotBroadcastWhenThePersistFails() {
-        Message message = new Message(null, "caller", "Caller", "receiver",
-                UUID.randomUUID().toString(), "hello", LocalDateTime.now());
+        Message message = messageFrom("caller");
 
         when(chatRepository.postMessage(message))
                 .thenReturn(Mono.error(new IllegalStateException("mongo down")));
@@ -110,6 +122,17 @@ class ChatServiceTest {
         StepVerifier.create(chatService.sendMessage(message))
                 .expectError(IllegalStateException.class)
                 .verify();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a sender outside the conversation writes nothing and reaches no one")
+    void sendMessage_shouldBroadcastNothing_whenTheSenderIsNotAMember() {
+        Message message = messageFrom("intruder");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -182,12 +205,30 @@ class ChatServiceTest {
     void readConversations_Success() {
         String userId = "user1";
         ConversationSummary summary = new ConversationSummary(UUID.randomUUID().toString(), List.of("user1", "user2"), null, "Title",
-                LocalDateTime.now(), null);
+                LocalDateTime.now(), null, null);
 
         when(chatRepository.findUserConversations(userId)).thenReturn(Flux.just(summary));
 
         StepVerifier.create(chatService.readConversations(userId))
                 .expectNext(summary)
                 .verifyComplete();
+    }
+
+    @Test
+    void readEventConversation_shouldDelegateScopedToTheRequester() {
+        ConversationDetail detail = new ConversationDetail("conv-1", List.of("me"), null, List.of(), 0);
+        when(chatRepository.findByEventId("event-1", "me")).thenReturn(Mono.just(detail));
+
+        StepVerifier.create(chatService.readEventConversation("event-1", "me")).expectNext(detail).verifyComplete();
+    }
+
+    @Test
+    void applyEventGroup_shouldSaveTheGroup() {
+        EventGroup group = new EventGroup("event-1", "Board games", List.of("ines", "me"), 2);
+        when(chatRepository.saveEventGroup(group)).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.applyEventGroup(group)).verifyComplete();
+
+        verify(chatRepository).saveEventGroup(group);
     }
 }

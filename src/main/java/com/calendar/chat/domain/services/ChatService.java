@@ -2,6 +2,7 @@ package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -27,7 +28,11 @@ public class ChatService {
     }
 
     /**
-     * Persists a message, then hands it to the recipients.
+     * Persists a message, then hands a copy to every other member of the conversation.
+     *
+     * <p>The recipients come from the stored conversation, not from the client: the
+     * {@code receiverId} it sends is ignored. Trusting it let a client push a live message to
+     * anyone whose id it knew, and could only ever name one recipient, which a group cannot use.
      *
      * <p>That order matters and used to be the other way round: the message was pushed to
      * the recipient's stream first and written afterwards, so a failed write left the
@@ -35,14 +40,17 @@ public class ChatService {
      * truth, so it goes first — a broadcast that fails costs a live update, not the
      * message.
      *
-     * <p>The {@link Mono#defer} is not decoration. Passing {@code broadcast(message)}
-     * straight to {@code then} evaluates it while the chain is being assembled, so the port
-     * is called even when the write fails — the publisher is never subscribed, but the
-     * method has already run. Same trap as an eagerly built {@code switchIfEmpty}.
+     * <p>Broadcasting from inside {@code concatMap} keeps the port uncalled until the write has
+     * succeeded. Passing {@code broadcast(message)} straight to {@code then} used to need a
+     * {@code defer}: it is evaluated while the chain is assembled, so the port ran even when the
+     * write failed.
      */
     public Mono<Void> sendMessage(Message message) {
         return chatRepository.postMessage(message)
-                .then(Mono.defer(() -> messageBroadcaster.broadcast(message)));
+                .flatMapMany(Flux::fromIterable)
+                .filter(memberId -> !memberId.equals(message.senderId()))
+                .concatMap(recipientId -> messageBroadcaster.broadcast(addressedTo(message, recipientId)))
+                .then();
     }
 
     /** Stream of messages addressed to this user, from any instance. */
@@ -66,5 +74,21 @@ public class ChatService {
 
     public Flux<ConversationSummary> readConversations(String userId) {
         return chatRepository.findUserConversations(userId);
+    }
+
+    /** An event's group, for one of its members; empty for anyone else, or before it exists. */
+    public Mono<ConversationDetail> readEventConversation(String eventId, String requesterId) {
+        return chatRepository.findByEventId(eventId, requesterId);
+    }
+
+    /** Brings an event's group in line with the members wely-events announced. */
+    public Mono<Void> applyEventGroup(EventGroup group) {
+        return chatRepository.saveEventGroup(group);
+    }
+
+    /** The same message for one recipient: a group message is delivered once per member. */
+    private static Message addressedTo(Message message, String recipientId) {
+        return new Message(message.id(), message.senderId(), message.senderName(), recipientId,
+                message.conversationId(), message.content(), message.timestamp());
     }
 }
