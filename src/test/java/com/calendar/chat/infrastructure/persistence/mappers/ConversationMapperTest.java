@@ -132,6 +132,19 @@ class ConversationMapperTest {
     }
 
     @Test
+    @DisplayName("an event group's detail carries its title and event, for the chat header")
+    void toConversationDetail_shouldMapAnEventGroup() {
+        ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
+                "EVENT", "event-1", "Board games", 2L);
+
+        ConversationDetail detail = mapper.toConversationDetail(entity);
+
+        assertThat(detail.getType()).isEqualTo(ConversationType.EVENT);
+        assertThat(detail.getTitle()).isEqualTo("Board games");
+        assertThat(detail.getEventId()).isEqualTo("event-1");
+    }
+
+    @Test
     @DisplayName("a conversation stored before groups existed reads as private")
     void toConversationSummary_shouldDefaultToDirect() {
         ConversationEntity entity = ConversationEntity.direct("conv-1", List.of("alice", "bob"), null, SENT_AT);
