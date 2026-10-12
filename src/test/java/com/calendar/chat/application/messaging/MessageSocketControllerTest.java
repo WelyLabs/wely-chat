@@ -46,12 +46,12 @@ class MessageSocketControllerTest {
     void sendMessage_shouldTakeTheSenderFromTheToken() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(jwt.getClaimAsString("preferred_username")).thenReturn(SENDER_NAME);
-        when(chatService.sendMessage(any(Message.class))).thenReturn(Mono.empty());
+        when(chatService.sendMessage(any(Message.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
         // The client claims someone else's name in senderUsername: ignored.
         ChatInputDTO input = new ChatInputDTO("attacker-claimed-name", "receiver-1", "conv-1", "hello");
 
-        StepVerifier.create(controller.sendMessage(jwt, input)).verifyComplete();
+        StepVerifier.create(controller.sendMessage(jwt, input)).expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
         verify(chatService).sendMessage(sent.capture());
@@ -65,7 +65,7 @@ class MessageSocketControllerTest {
     void sendMessage_shouldCarryTheClientPayloadFields() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(jwt.getClaimAsString("preferred_username")).thenReturn(SENDER_NAME);
-        when(chatService.sendMessage(any(Message.class))).thenReturn(Mono.empty());
+        when(chatService.sendMessage(any(Message.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
         controller.sendMessage(jwt, new ChatInputDTO(null, "receiver-1", "conv-1", "hello")).block();
 
