@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,7 +52,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     public Mono<ConversationDetail> saveWithInitialBucket(List<String> participantIds) {
 
         ConversationEntity conversationEntityToSave =
-                ConversationEntity.direct(null, participantIds, null, LocalDateTime.now());
+                ConversationEntity.direct(null, participantIds, null, Instant.now());
 
         return conversationRepository.save(conversationEntityToSave)
                 .flatMap(conversationEntity -> {
@@ -186,7 +186,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     private Mono<Void> touchConversation(String conversationId, MessageEntity messageEntity) {
         Update update = new Update()
                 .set("lastMessage", messageEntity)
-                .set("updatedAt", LocalDateTime.now());
+                .set("updatedAt", Instant.now());
 
         return mongoTemplate
                 .updateFirst(Query.query(Criteria.where("_id").is(conversationId)),
@@ -232,7 +232,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .updateEventGroup(group.eventId(), group.version(), group.memberIds(), group.title())
                 .filter(updated -> updated == 0)
                 .flatMap(none -> conversationRepository.insert(new ConversationEntity(
-                        null, group.memberIds(), null, LocalDateTime.now(),
+                        null, group.memberIds(), null, Instant.now(),
                         ConversationType.EVENT.name(), group.eventId(), group.title(), group.version())))
                 .onErrorResume(DuplicateKeyException.class, stale -> Mono.empty())
                 .then();

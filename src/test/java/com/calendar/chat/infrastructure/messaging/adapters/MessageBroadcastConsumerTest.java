@@ -8,7 +8,7 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -28,7 +28,7 @@ class MessageBroadcastConsumerTest {
     }
 
     /** Fixed, so the same id always yields an equal payload and Mockito can match it. */
-    private static final LocalDateTime SENT_AT = LocalDateTime.of(2025, 1, 1, 12, 0);
+    private static final Instant SENT_AT = Instant.parse("2025-01-01T12:00:00Z");
 
     private static MessageBroadcastDTO payload(String id) {
         return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT);

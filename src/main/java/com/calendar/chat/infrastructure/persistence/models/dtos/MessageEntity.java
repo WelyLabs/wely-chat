@@ -2,7 +2,7 @@ package com.calendar.chat.infrastructure.persistence.models.dtos;
 
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -22,5 +22,5 @@ public record MessageEntity(
         @Field("s_id") String senderId,
         @Field("s_un") String senderName,
         @Field("txt") String content,
-        @Field("ts") LocalDateTime timestamp
+        @Field("ts") Instant timestamp
 ) {}

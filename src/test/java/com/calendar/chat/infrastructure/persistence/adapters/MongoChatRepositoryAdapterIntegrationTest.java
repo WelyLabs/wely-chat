@@ -24,7 +24,7 @@ import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -103,7 +103,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
     }
 
     private static Message messageFrom(String senderId, String conversationId, String content) {
-        return new Message(null, senderId, senderId, BOB, conversationId, content, LocalDateTime.now());
+        return new Message(null, senderId, senderId, BOB, conversationId, content, Instant.now());
     }
 
     private long bucketCount(String conversationId) {
@@ -201,7 +201,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         // and unmappedTargetPolicy = ERROR. Pinned here too, at the layer where it is stored.
         ConversationDetail conversation = aConversation();
         Message message = new Message("m-42", ALICE, "Alice", BOB,
-                conversation.getId(), "hello", LocalDateTime.now());
+                conversation.getId(), "hello", Instant.now());
 
         StepVerifier.create(post(message)).verifyComplete();
 

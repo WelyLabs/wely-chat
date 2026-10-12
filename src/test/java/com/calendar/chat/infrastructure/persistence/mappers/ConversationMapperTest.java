@@ -11,7 +11,7 @@ import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucke
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +29,7 @@ class ConversationMapperTest {
 
     private final ConversationMapper mapper = new ConversationMapperImpl();
 
-    private static final LocalDateTime SENT_AT = LocalDateTime.of(2025, 6, 1, 12, 30);
+    private static final Instant SENT_AT = Instant.parse("2025-06-01T12:30:00Z");
 
     private static Message message() {
         return new Message("m-1", "alice", "Alice", "bob", "conv-1", "hello", SENT_AT);
@@ -173,7 +173,7 @@ class ConversationMapperTest {
         entity.setConversationId("conv-1");
         entity.setBucketIndex(3);
         entity.setMessages(List.of(messageEntity(),
-                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusMinutes(1))));
+                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusSeconds(1 * 60))));
 
         MessageBucket bucket = mapper.toMessageBucket(entity);
 

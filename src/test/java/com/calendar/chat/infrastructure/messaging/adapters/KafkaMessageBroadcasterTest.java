@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.cloud.stream.function.StreamBridge;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,7 +39,7 @@ class KafkaMessageBroadcasterTest {
 
     private static Message to(String receiverId) {
         return new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
-                LocalDateTime.now());
+                Instant.now());
     }
 
     @Test
@@ -90,7 +90,7 @@ class KafkaMessageBroadcasterTest {
     @DisplayName("a consumed record with no recipient does not kill the stream")
     void accept_shouldTolerateARecordWithoutARecipient() {
         MessageBroadcastDTO withoutRecipient = mapper.toBroadcastDTO(
-                new Message("m-1", "sender", "Sender", null, "conv-1", "hi", LocalDateTime.now()));
+                new Message("m-1", "sender", "Sender", null, "conv-1", "hi", Instant.now()));
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> {

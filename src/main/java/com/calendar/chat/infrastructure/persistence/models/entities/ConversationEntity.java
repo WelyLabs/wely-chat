@@ -9,7 +9,7 @@ import org.springframework.data.annotation.PersistenceCreator;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Document(collection = "conversations")
@@ -25,7 +25,7 @@ public class ConversationEntity {
     
     private MessageEntity lastMessage;
 
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /** DIRECT or EVENT. Absent on conversations stored before groups existed, which are DIRECT. */
     private String type;
@@ -41,7 +41,7 @@ public class ConversationEntity {
 
     /** A private conversation between these participants. A factory, so MapStruct sees one constructor. */
     public static ConversationEntity direct(String id, List<String> participantIds, MessageEntity lastMessage,
-                                            LocalDateTime updatedAt) {
+                                            Instant updatedAt) {
         return new ConversationEntity(id, participantIds, lastMessage, updatedAt, null, null, null, null);
     }
 }

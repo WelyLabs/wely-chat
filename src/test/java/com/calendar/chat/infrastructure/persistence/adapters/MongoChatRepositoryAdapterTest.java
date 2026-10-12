@@ -26,7 +26,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity.MAX_MESSAGES;
@@ -52,9 +52,9 @@ class MongoChatRepositoryAdapterTest {
     private MongoChatRepositoryAdapter adapter;
 
     private final Message message = new Message(
-            null, SENDER_ID, "Sender", "receiver-1", CONVERSATION_ID, "hello", LocalDateTime.now());
+            null, SENDER_ID, "Sender", "receiver-1", CONVERSATION_ID, "hello", Instant.now());
     private final MessageEntity messageEntity = new MessageEntity(
-            "m-1", SENDER_ID, "Sender", "hello", LocalDateTime.now());
+            "m-1", SENDER_ID, "Sender", "hello", Instant.now());
 
     @BeforeEach
     void setUp() {
@@ -176,7 +176,7 @@ class MongoChatRepositoryAdapterTest {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
                 .thenReturn(Mono.just(ConversationEntity.direct(
-                        CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, LocalDateTime.now())));
+                        CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, Instant.now())));
 
         // first pass: bucket 3 is full; second: the winner's bucket 4 has room
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
@@ -221,7 +221,7 @@ class MongoChatRepositoryAdapterTest {
     @DisplayName("a conversation with no initial bucket reads as empty instead of vanishing")
     void findById_shouldTolerateMissingInitialBucket() {
         ConversationEntity conversation = ConversationEntity.direct(
-                CONVERSATION_ID, List.of(SENDER_ID), null, LocalDateTime.now());
+                CONVERSATION_ID, List.of(SENDER_ID), null, Instant.now());
 
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
                 .thenReturn(Mono.just(conversation));
@@ -258,7 +258,7 @@ class MongoChatRepositoryAdapterTest {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
                 .thenReturn(Mono.just(ConversationEntity.direct(
-                        CONVERSATION_ID, List.of(SENDER_ID), null, LocalDateTime.now())));
+                        CONVERSATION_ID, List.of(SENDER_ID), null, Instant.now())));
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
                 .thenReturn(Mono.empty());
         when(mongoTemplate.insert(any(MessageBucketEntity.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
@@ -351,7 +351,7 @@ class MongoChatRepositoryAdapterTest {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
                 .thenReturn(Mono.just(ConversationEntity.direct(
-                        CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, LocalDateTime.now())));
+                        CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, Instant.now())));
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
                 .thenReturn(Mono.just(bucket(latestIndex)));
     }
