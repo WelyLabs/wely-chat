@@ -24,8 +24,9 @@ public class MessageSocketController {
         this.presenceService = presenceService;
     }
 
+    /** Answers with the stored message, which the client takes as delivered. */
     @MessageMapping("chat.send")
-    public Mono<Void> sendMessage(@AuthenticationPrincipal Jwt jwt, ChatInputDTO chatInputDTO) {
+    public Mono<Message> sendMessage(@AuthenticationPrincipal Jwt jwt, ChatInputDTO chatInputDTO) {
         String userId = jwt.getClaimAsString("businessId");
         String username = jwt.getClaimAsString("preferred_username");
 

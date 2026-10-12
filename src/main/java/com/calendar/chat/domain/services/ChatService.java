@@ -7,6 +7,8 @@ import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -44,13 +46,19 @@ public class ChatService {
      * succeeded. Passing {@code broadcast(message)} straight to {@code then} used to need a
      * {@code defer}: it is evaluated while the chain is assembled, so the port ran even when the
      * write failed.
+     *
+     * <p>Returns the stored message: it is the sender's acknowledgement. This used to complete
+     * empty, and rsocket-js resolves a request-response only on a payload, so every message stayed
+     * "sending" on the sender's screen. A sender outside the conversation gets an error for the
+     * same reason: an empty answer would leave the message pending instead of failed.
      */
-    public Mono<Void> sendMessage(Message message) {
+    public Mono<Message> sendMessage(Message message) {
         return chatRepository.postMessage(message)
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMapMany(Flux::fromIterable)
                 .filter(memberId -> !memberId.equals(message.senderId()))
                 .concatMap(recipientId -> messageBroadcaster.broadcast(addressedTo(message, recipientId)))
-                .then();
+                .then(Mono.just(message));
     }
 
     /** Stream of messages addressed to this user, from any instance. */

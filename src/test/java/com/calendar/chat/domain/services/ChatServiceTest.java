@@ -7,6 +7,8 @@ import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,7 +90,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines", "hugo")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
 
         verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
         verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
@@ -105,7 +107,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "friend")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
 
         order.verify(chatRepository).postMessage(message);
         order.verify(messageBroadcaster).broadcast(addressedTo(message, "friend"));
@@ -127,12 +129,15 @@ class ChatServiceTest {
     }
 
     @Test
-    @DisplayName("a sender outside the conversation writes nothing and reaches no one")
-    void sendMessage_shouldBroadcastNothing_whenTheSenderIsNotAMember() {
+    @DisplayName("a sender outside the conversation is refused, so the client shows the message as failed")
+    void sendMessage_shouldFailAndReachNoOne_whenTheSenderIsNotAMember() {
         Message message = messageFrom("intruder");
         when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message))
+                .expectErrorMatches(error -> error instanceof ChatException
+                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
