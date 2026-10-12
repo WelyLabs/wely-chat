@@ -3,6 +3,7 @@ package com.calendar.chat;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.infrastructure.messaging.adapters.EventGroupConsumer;
 import com.calendar.chat.infrastructure.messaging.adapters.KafkaMessageBroadcaster;
 import com.calendar.chat.infrastructure.messaging.adapters.LocalMessageBroadcaster;
 import org.junit.jupiter.api.Test;
@@ -50,5 +51,11 @@ class ChatApplicationTest {
     void contextShouldSelectTheInProcessBroadcasterWithoutABroker() {
         assertThat(context.getBean(MessageBroadcaster.class)).isInstanceOf(LocalMessageBroadcaster.class);
         assertThat(context.getBeansOfType(KafkaMessageBroadcaster.class)).isEmpty();
+    }
+
+    /** Same guard for the event groups: a consumer bean would make the binder reach for a broker. */
+    @Test
+    void contextShouldNotConsumeEventGroupsWithoutABroker() {
+        assertThat(context.getBeansOfType(EventGroupConsumer.class)).isEmpty();
     }
 }

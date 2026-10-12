@@ -59,6 +59,18 @@ public class ConversationController {
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }
 
+    /** The group of an event the caller takes part in; 404 otherwise, or before it is created. */
+    @GetMapping("events/{eventId}")
+    public Mono<ResponseEntity<ConversationDetail>> getEventConversation(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable String eventId) {
+        String userId = jwt.getClaimAsString("businessId");
+
+        return chatService.readEventConversation(eventId, userId)
+                .map(ResponseEntity::ok)
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+    }
+
     @GetMapping("all")
     public ResponseEntity<Flux<ConversationSummary>> getConversations(
             @AuthenticationPrincipal Jwt jwt

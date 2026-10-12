@@ -28,13 +28,14 @@ import org.mapstruct.ReportingPolicy;
 public interface ConversationMapper {
 
     @Mapping(target = "participantIds", ignore = true)
+    @Mapping(target = "groupVersion", ignore = true)
     ConversationEntity toConversationEntity(ConversationSummary conversationSummary);
 
-    @Mapping(target = "type", ignore = true)
-    @Mapping(target = "title", ignore = true)
+    // A conversation stored before groups existed has no type: it is a private one.
+    @Mapping(target = "type", source = "type", defaultValue = "DIRECT")
     ConversationSummary toConversationSummary(ConversationEntity conversationEntity);
 
-    @Mapping(target = "type", ignore = true)
+    @Mapping(target = "type", source = "type", defaultValue = "DIRECT")
     @Mapping(target = "messages", ignore = true)
     @Mapping(target = "bucketIndex", ignore = true)
     ConversationDetail toConversationDetail(ConversationEntity conversationEntity);

@@ -3,6 +3,7 @@ package com.calendar.chat.infrastructure.persistence.repositories;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.data.mongodb.repository.ReactiveMongoRepository;
+import org.springframework.data.mongodb.repository.Update;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -12,10 +13,17 @@ import java.util.List;
 @Repository
 public interface ConversationRepository extends ReactiveMongoRepository<ConversationEntity, String> {
 
-    @Query("{ 'participantIds': { $all: ?0 } }")
+    /**
+     * The private conversation between these participants. Event groups are excluded: {@code $all}
+     * also matches a group the two happen to share, which would open it in place of their
+     * conversation and count as "sharing a conversation" for presence.
+     */
+    @Query("{ 'participantIds': { $all: ?0 }, 'eventId': null }")
     Mono<ConversationEntity> findByParticipantIds(List<String> participantIds);
 
-    Flux<ConversationEntity> findByParticipantIdsContaining(String userId);
+    /** Every private conversation of the user, and the event groups someone has written in. */
+    @Query("{ 'participantIds': ?0, $or: [ { 'eventId': null }, { 'lastMessage': { $ne: null } } ] }")
+    Flux<ConversationEntity> findListedByParticipant(String userId);
 
     /**
      * Looks up a conversation the caller actually takes part in.
@@ -26,4 +34,15 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
      * must go through this method.
      */
     Mono<ConversationEntity> findByIdAndParticipantIdsContaining(String id, String userId);
+
+    /** An event's group, scoped to its members like {@link #findByIdAndParticipantIdsContaining}. */
+    Mono<ConversationEntity> findByEventIdAndParticipantIdsContaining(String eventId, String userId);
+
+    /**
+     * Replaces an event group's members and title, if what is stored is older. Matches nothing when
+     * the group does not exist yet — or holds this version or a newer one.
+     */
+    @Query("{ 'eventId': ?0, $or: [ { 'groupVersion': { $lt: ?1 } }, { 'groupVersion': null } ] }")
+    @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': ?2, 'title': ?3 } }")
+    Mono<Long> updateEventGroup(String eventId, long version, List<String> memberIds, String title);
 }

@@ -92,7 +92,7 @@ class ConversationMapperTest {
     @DisplayName("a summary becomes a conversation entity")
     void toConversationEntity_shouldMapTheSummary() {
         ConversationSummary summary = new ConversationSummary(
-                "conv-1", List.of("alice", "bob"), ConversationType.DIRECT, "Bob", SENT_AT, message());
+                "conv-1", List.of("alice", "bob"), ConversationType.DIRECT, "Bob", SENT_AT, message(), null);
 
         ConversationEntity entity = mapper.toConversationEntity(summary);
 
@@ -106,7 +106,7 @@ class ConversationMapperTest {
     @DisplayName("an entity becomes a summary, carrying the preview message")
     void toConversationSummary_shouldMapTheEntity() {
         // Only an all-args constructor: the entity declares no no-arg one.
-        ConversationEntity entity = new ConversationEntity(
+        ConversationEntity entity = ConversationEntity.direct(
                 "conv-1", List.of("alice", "bob"), messageEntity(), SENT_AT);
 
         ConversationSummary summary = mapper.toConversationSummary(entity);
@@ -119,9 +119,31 @@ class ConversationMapperTest {
     }
 
     @Test
+    @DisplayName("an event group's summary carries its type, title and event")
+    void toConversationSummary_shouldMapAnEventGroup() {
+        ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
+                "EVENT", "event-1", "Board games", 2L);
+
+        ConversationSummary summary = mapper.toConversationSummary(entity);
+
+        assertThat(summary.type()).isEqualTo(ConversationType.EVENT);
+        assertThat(summary.title()).isEqualTo("Board games");
+        assertThat(summary.eventId()).isEqualTo("event-1");
+    }
+
+    @Test
+    @DisplayName("a conversation stored before groups existed reads as private")
+    void toConversationSummary_shouldDefaultToDirect() {
+        ConversationEntity entity = ConversationEntity.direct("conv-1", List.of("alice", "bob"), null, SENT_AT);
+
+        assertThat(mapper.toConversationSummary(entity).type()).isEqualTo(ConversationType.DIRECT);
+        assertThat(mapper.toConversationDetail(entity).getType()).isEqualTo(ConversationType.DIRECT);
+    }
+
+    @Test
     @DisplayName("an entity becomes a detail, carrying the participants")
     void toConversationDetail_shouldMapTheEntity() {
-        ConversationEntity entity = new ConversationEntity(
+        ConversationEntity entity = ConversationEntity.direct(
                 "conv-1", List.of("alice", "bob"), messageEntity(), SENT_AT);
 
         ConversationDetail detail = mapper.toConversationDetail(entity);

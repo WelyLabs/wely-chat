@@ -136,13 +136,38 @@ class ConversationControllerTest {
                 .verify();
     }
 
+    // --- getEventConversation ---------------------------------------------
+
+    @Test
+    void getEventConversation_shouldReturnTheGroupForTheCaller() {
+        givenAuthenticatedCaller();
+        ConversationDetail detail = new ConversationDetail();
+        when(chatService.readEventConversation("event-1", CALLER_ID)).thenReturn(Mono.just(detail));
+
+        StepVerifier.create(controller.getEventConversation(jwt, "event-1"))
+                .assertNext(response -> assertThat(response.getBody()).isSameAs(detail))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a non-member and a group not created yet yield the same error")
+    void getEventConversation_shouldFailAsNotFoundForNonMember() {
+        givenAuthenticatedCaller();
+        when(chatService.readEventConversation("event-1", CALLER_ID)).thenReturn(Mono.empty());
+
+        StepVerifier.create(controller.getEventConversation(jwt, "event-1"))
+                .expectErrorMatches(error -> error instanceof ChatException
+                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
+    }
+
     // --- getConversations -------------------------------------------------
 
     @Test
     void getConversations_shouldListOnlyTheCallersConversations() {
         givenAuthenticatedCaller();
         ConversationSummary summary =
-                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", LocalDateTime.now(), null);
+                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", LocalDateTime.now(), null, null);
         when(chatService.readConversations(CALLER_ID)).thenReturn(Flux.just(summary));
 
         var response = controller.getConversations(jwt);

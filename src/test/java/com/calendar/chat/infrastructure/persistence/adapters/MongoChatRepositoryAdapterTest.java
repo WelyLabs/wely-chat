@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
+import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.infrastructure.persistence.mappers.ConversationMapper;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
@@ -20,6 +22,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -117,7 +120,7 @@ class MongoChatRepositoryAdapterTest {
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
                 .thenReturn(Mono.just(modified(1)));
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
         verify(mongoTemplate).updateFirst(any(Query.class), update.capture(), eq(MessageBucketEntity.class));
@@ -139,7 +142,7 @@ class MongoChatRepositoryAdapterTest {
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
                 .thenReturn(Mono.just(modified(1)));
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
         verify(mongoTemplate).updateFirst(query.capture(), any(Update.class), eq(MessageBucketEntity.class));
@@ -159,7 +162,7 @@ class MongoChatRepositoryAdapterTest {
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
                 .thenReturn(Mono.just(modified(1)));
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<MessageBucketEntity> inserted = ArgumentCaptor.forClass(MessageBucketEntity.class);
         verify(mongoTemplate).insert(inserted.capture());
@@ -172,7 +175,7 @@ class MongoChatRepositoryAdapterTest {
     void postMessage_shouldRetryOnDuplicateKey() {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
-                .thenReturn(Mono.just(new ConversationEntity(
+                .thenReturn(Mono.just(ConversationEntity.direct(
                         CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, LocalDateTime.now())));
 
         // first pass: bucket 3 is full; second: the winner's bucket 4 has room
@@ -185,7 +188,7 @@ class MongoChatRepositoryAdapterTest {
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
                 .thenReturn(Mono.just(modified(1)));
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
 
         verify(messageBucketRepository, times(2))
                 .findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID);
@@ -202,7 +205,7 @@ class MongoChatRepositoryAdapterTest {
         when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
                 .thenReturn(Mono.just(modified(1)));
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
 
         ArgumentCaptor<Update> update = ArgumentCaptor.forClass(Update.class);
         verify(mongoTemplate).updateFirst(any(Query.class), update.capture(), eq(ConversationEntity.class));
@@ -217,7 +220,7 @@ class MongoChatRepositoryAdapterTest {
     @Test
     @DisplayName("a conversation with no initial bucket reads as empty instead of vanishing")
     void findById_shouldTolerateMissingInitialBucket() {
-        ConversationEntity conversation = new ConversationEntity(
+        ConversationEntity conversation = ConversationEntity.direct(
                 CONVERSATION_ID, List.of(SENDER_ID), null, LocalDateTime.now());
 
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
@@ -235,10 +238,119 @@ class MongoChatRepositoryAdapterTest {
                 .verifyComplete();
     }
 
+    @Test
+    @DisplayName("postMessage returns the stored members: the recipients come from there")
+    void postMessage_shouldReturnTheConversationMembers() {
+        givenParticipantAndLatestBucket(0);
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
+                .thenReturn(Mono.just(modified(1)));
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
+                .thenReturn(Mono.just(modified(1)));
+
+        StepVerifier.create(adapter.postMessage(message))
+                .expectNext(List.of(SENDER_ID, "receiver-1"))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the first message of a group without a bucket creates bucket 0 instead of vanishing")
+    void postMessage_shouldCreateTheFirstBucket_whenThereIsNone() {
+        when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
+        when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
+                .thenReturn(Mono.just(ConversationEntity.direct(
+                        CONVERSATION_ID, List.of(SENDER_ID), null, LocalDateTime.now())));
+        when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
+                .thenReturn(Mono.empty());
+        when(mongoTemplate.insert(any(MessageBucketEntity.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
+                .thenReturn(Mono.just(modified(1)));
+
+        StepVerifier.create(adapter.postMessage(message)).expectNextCount(1).verifyComplete();
+
+        ArgumentCaptor<MessageBucketEntity> created = ArgumentCaptor.forClass(MessageBucketEntity.class);
+        verify(mongoTemplate).insert(created.capture());
+        assertThat(created.getValue().getBucketIndex()).isZero();
+        assertThat(created.getValue().getMessages()).containsExactly(messageEntity);
+    }
+
+    // --- event groups -----------------------------------------------------
+
+    @Test
+    void findUserConversations_shouldListWhatTheRepositoryKeeps() {
+        ConversationEntity entity = ConversationEntity.direct(CONVERSATION_ID, List.of("me"), null, null);
+        ConversationSummary summary = new ConversationSummary(CONVERSATION_ID, List.of("me"), null, null, null, null, null);
+        when(conversationRepository.findListedByParticipant("me")).thenReturn(Flux.just(entity));
+        when(conversationMapper.toConversationSummary(entity)).thenReturn(summary);
+
+        StepVerifier.create(adapter.findUserConversations("me")).expectNext(summary).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("an event's group is looked up scoped to its members")
+    void findByEventId_shouldQueryScopedByMember() {
+        when(conversationRepository.findByEventIdAndParticipantIdsContaining("event-1", "intruder"))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.findByEventId("event-1", "intruder")).verifyComplete();
+
+        verify(messageBucketRepository, never()).findFirstByConversationIdOrderByBucketIndexDesc(any());
+    }
+
+    private static final EventGroup GROUP = new EventGroup("event-1", "Board games", List.of("ines", "me"), 3);
+
+    @Test
+    @DisplayName("an existing older group is updated in place, nothing inserted")
+    void saveEventGroup_shouldUpdateAnOlderGroup() {
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+                .thenReturn(Mono.just(1L));
+
+        StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyComplete();
+
+        verify(conversationRepository, never()).insert(any(ConversationEntity.class));
+    }
+
+    @Test
+    @DisplayName("a group seen for the first time is inserted as an EVENT conversation")
+    void saveEventGroup_shouldInsertANewGroup() {
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+                .thenReturn(Mono.just(0L));
+        when(conversationRepository.insert(any(ConversationEntity.class)))
+                .thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+        StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyComplete();
+
+        ArgumentCaptor<ConversationEntity> inserted = ArgumentCaptor.forClass(ConversationEntity.class);
+        verify(conversationRepository).insert(inserted.capture());
+        assertThat(inserted.getValue().getType()).isEqualTo("EVENT");
+        assertThat(inserted.getValue().getEventId()).isEqualTo("event-1");
+        assertThat(inserted.getValue().getTitle()).isEqualTo("Board games");
+        assertThat(inserted.getValue().getParticipantIds()).containsExactly("ines", "me");
+        assertThat(inserted.getValue().getGroupVersion()).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("a replayed or overtaken list is ignored: the unique event id refuses the insert")
+    void saveEventGroup_shouldIgnoreAStaleList() {
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+                .thenReturn(Mono.just(0L));
+        when(conversationRepository.insert(any(ConversationEntity.class)))
+                .thenReturn(Mono.error(new DuplicateKeyException("eventId")));
+
+        StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyComplete();
+    }
+
+    @Test
+    void saveEventGroup_shouldFail_whenMongoFails() {
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+                .thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyError(IllegalStateException.class);
+    }
+
     private void givenParticipantAndLatestBucket(int latestIndex) {
         when(conversationMapper.toMessageEntity(message)).thenReturn(messageEntity);
         when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
-                .thenReturn(Mono.just(new ConversationEntity(
+                .thenReturn(Mono.just(ConversationEntity.direct(
                         CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, LocalDateTime.now())));
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
                 .thenReturn(Mono.just(bucket(latestIndex)));

@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.ConversationDetail;
+import com.calendar.chat.domain.models.ConversationType;
+import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
@@ -95,6 +97,11 @@ class MongoChatRepositoryAdapterIntegrationTest {
         return adapter.saveWithInitialBucket(List.of(ALICE, BOB)).block();
     }
 
+    /** Posts and drops the returned members: most cases here are about what gets stored. */
+    private reactor.core.publisher.Mono<Void> post(Message message) {
+        return adapter.postMessage(message).then();
+    }
+
     private static Message messageFrom(String senderId, String conversationId, String content) {
         return new Message(null, senderId, senderId, BOB, conversationId, content, LocalDateTime.now());
     }
@@ -123,7 +130,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(
                         Flux.range(1, 10)
-                                .concatMap(i -> adapter.postMessage(
+                                .concatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i))))
                 .verifyComplete();
 
@@ -142,7 +149,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(
                         Flux.range(1, MessageBucketEntity.MAX_MESSAGES + 1)
-                                .concatMap(i -> adapter.postMessage(
+                                .concatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i))))
                 .verifyComplete();
 
@@ -173,7 +180,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(
                         Flux.range(1, total)
-                                .flatMap(i -> adapter.postMessage(
+                                .flatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i)), 16))
                 .verifyComplete();
 
@@ -196,7 +203,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         Message message = new Message("m-42", ALICE, "Alice", BOB,
                 conversation.getId(), "hello", LocalDateTime.now());
 
-        StepVerifier.create(adapter.postMessage(message)).verifyComplete();
+        StepVerifier.create(post(message)).verifyComplete();
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
                 .assertNext(bucket -> assertThat(bucket.messages().getFirst().id()).isEqualTo("m-42"))
@@ -210,7 +217,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         // against a double proves only that a Criteria was assembled.
         ConversationDetail conversation = aConversation();
 
-        StepVerifier.create(adapter.postMessage(
+        StepVerifier.create(post(
                         messageFrom(MALLORY, conversation.getId(), "let me in"))).verifyComplete();
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
@@ -233,7 +240,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
     @DisplayName("a conversation is listed for its participants, and for no one else")
     void findUserConversations_shouldListOnlyTheCallersConversations() {
         ConversationDetail conversation = aConversation();
-        adapter.postMessage(messageFrom(ALICE, conversation.getId(), "hi")).block();
+        post(messageFrom(ALICE, conversation.getId(), "hi")).block();
 
         StepVerifier.create(adapter.findUserConversations(ALICE)).expectNextCount(1).verifyComplete();
         StepVerifier.create(adapter.findUserConversations(MALLORY)).verifyComplete();
@@ -244,8 +251,8 @@ class MongoChatRepositoryAdapterIntegrationTest {
     void postMessage_shouldUpdateTheConversationPreview() {
         ConversationDetail conversation = aConversation();
 
-        adapter.postMessage(messageFrom(ALICE, conversation.getId(), "first")).block();
-        adapter.postMessage(messageFrom(ALICE, conversation.getId(), "second")).block();
+        post(messageFrom(ALICE, conversation.getId(), "first")).block();
+        post(messageFrom(ALICE, conversation.getId(), "second")).block();
 
         StepVerifier.create(adapter.findUserConversations(ALICE))
                 .assertNext(summary -> assertThat(summary.lastMessage().content()).isEqualTo("second"))
@@ -266,5 +273,73 @@ class MongoChatRepositoryAdapterIntegrationTest {
         StepVerifier.create(mongoTemplate.insert(duplicate))
                 .expectError(org.springframework.dao.DuplicateKeyException.class)
                 .verify();
+    }
+
+    // --- event groups -----------------------------------------------------
+
+    private static final EventGroup GROUP = new EventGroup("event-1", "Board games", List.of(ALICE, BOB, "carol"), 2);
+
+    @Test
+    @DisplayName("an event group is not mistaken for the private conversation of two of its members")
+    void findByParticipantIds_shouldIgnoreEventGroups() {
+        adapter.saveEventGroup(GROUP).block();
+
+        StepVerifier.create(adapter.findByParticipantIds(List.of(ALICE, BOB))).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("an older or replayed member list never overwrites a newer one")
+    void saveEventGroup_shouldKeepTheNewestList() {
+        adapter.saveEventGroup(GROUP).block();
+        adapter.saveEventGroup(new EventGroup("event-1", "Board games", List.of(ALICE, BOB, "carol", "dave"), 3)).block();
+        adapter.saveEventGroup(GROUP).block();
+
+        StepVerifier.create(adapter.findByEventId("event-1", "dave"))
+                .assertNext(group -> {
+                    assertThat(group.getParticipantIds()).containsExactly(ALICE, BOB, "carol", "dave");
+                    assertThat(group.getType()).isEqualTo(ConversationType.EVENT);
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("someone who left the group can no longer read it")
+    void saveEventGroup_shouldRemoveAMemberWhoLeft() {
+        adapter.saveEventGroup(GROUP).block();
+        adapter.saveEventGroup(new EventGroup("event-1", "Board games", List.of(ALICE, BOB), 3)).block();
+
+        StepVerifier.create(adapter.findByEventId("event-1", "carol")).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a group gets its first bucket with its first message, and every member as recipient")
+    void postMessage_shouldWriteTheFirstMessageOfAGroup() {
+        adapter.saveEventGroup(GROUP).block();
+        String groupId = adapter.findByEventId("event-1", ALICE).block().getId();
+
+        StepVerifier.create(adapter.postMessage(messageFrom(ALICE, groupId, "who brings the cards?")))
+                .expectNext(List.of(ALICE, BOB, "carol"))
+                .verifyComplete();
+
+        StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(groupId, 0, BOB))
+                .assertNext(bucket -> assertThat(bucket.messages()).hasSize(1))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("an event group is listed once someone has written in it")
+    void findUserConversations_shouldListAGroupOnceItHasMessages() {
+        adapter.saveEventGroup(GROUP).block();
+        assertThat(adapter.findUserConversations(BOB).collectList().block()).isEmpty();
+
+        String groupId = adapter.findByEventId("event-1", ALICE).block().getId();
+        post(messageFrom(ALICE, groupId, "hi")).block();
+
+        StepVerifier.create(adapter.findUserConversations(BOB))
+                .assertNext(summary -> {
+                    assertThat(summary.eventId()).isEqualTo("event-1");
+                    assertThat(summary.title()).isEqualTo("Board games");
+                })
+                .verifyComplete();
     }
 }
