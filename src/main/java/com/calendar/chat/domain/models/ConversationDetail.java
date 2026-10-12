@@ -15,4 +15,8 @@ public class ConversationDetail {
     private ConversationType type;
     private List<Message> messages;
     private Integer bucketIndex;
+    /** The event's title for an event group; null for a private conversation. */
+    private String title;
+    /** The event an {@link ConversationType#EVENT} conversation belongs to; null otherwise. */
+    private String eventId;
 }

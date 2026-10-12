@@ -48,7 +48,7 @@ class ChatServiceTest {
     void readOrCreateConversation_Existing() {
         List<String> participants = List.of("user1", "user2");
         ConversationDetail detail = new ConversationDetail(UUID.randomUUID().toString(), participants, null, List.of(),
-                0);
+                0, null, null);
 
         when(chatRepository.findByParticipantIds(participants)).thenReturn(Mono.just(detail));
 
@@ -61,7 +61,7 @@ class ChatServiceTest {
     void readOrCreateConversation_New() {
         List<String> participants = List.of("user1", "user2");
         ConversationDetail detail = new ConversationDetail(UUID.randomUUID().toString(), participants, null, List.of(),
-                0);
+                0, null, null);
 
         when(chatRepository.findByParticipantIds(participants)).thenReturn(Mono.empty());
         when(chatRepository.saveWithInitialBucket(participants)).thenReturn(Mono.just(detail));
@@ -182,7 +182,7 @@ class ChatServiceTest {
     @Test
     void readConversationById_Success() {
         String convId = UUID.randomUUID().toString();
-        ConversationDetail detail = new ConversationDetail(convId, List.of(), null, List.of(), 0);
+        ConversationDetail detail = new ConversationDetail(convId, List.of(), null, List.of(), 0, null, null);
 
         when(chatRepository.findById(convId, "user1")).thenReturn(Mono.just(detail));
 
@@ -216,7 +216,7 @@ class ChatServiceTest {
 
     @Test
     void readEventConversation_shouldDelegateScopedToTheRequester() {
-        ConversationDetail detail = new ConversationDetail("conv-1", List.of("me"), null, List.of(), 0);
+        ConversationDetail detail = new ConversationDetail("conv-1", List.of("me"), null, List.of(), 0, null, null);
         when(chatRepository.findByEventId("event-1", "me")).thenReturn(Mono.just(detail));
 
         StepVerifier.create(chatService.readEventConversation("event-1", "me")).expectNext(detail).verifyComplete();
