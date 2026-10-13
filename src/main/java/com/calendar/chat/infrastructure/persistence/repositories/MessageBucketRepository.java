@@ -19,6 +19,10 @@ public interface MessageBucketRepository extends ReactiveMongoRepository<Message
     @Update("{ '$set': { 'messages.$.ph.rm': true, 'messages.$.ph.w': 0, 'messages.$.ph.h': 0 }, '$unset': { 'messages.$.ph.k': '' } }")
     Mono<Long> markPhotoRemoved(String conversationId, String messageId);
 
+    /** Whether any bucket of the conversation holds a message with this id. */
+    @Query(value = "{ 'conversationId': ?0, 'messages.m_id': ?1 }", exists = true)
+    Mono<Boolean> existsWithMessage(String conversationId, String messageId);
+
     /** The bucket holding the message, projected down to that one message. */
     @Query(value = "{ 'conversationId': ?0, 'messages.m_id': ?1 }", fields = "{ 'conversationId': 1, 'bucketIndex': 1, 'messages.$': 1 }")
     Mono<MessageBucketEntity> findWithMessage(String conversationId, String messageId);

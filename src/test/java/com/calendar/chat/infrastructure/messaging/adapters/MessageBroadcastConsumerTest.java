@@ -39,7 +39,7 @@ class MessageBroadcastConsumerTest {
     private static final Instant SENT_AT = Instant.parse("2025-01-01T12:00:00Z");
 
     private static MessageBroadcastDTO payload(String id) {
-        return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT, null, "NEW");
+        return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT, null, null, "NEW");
     }
 
     private static Message<byte[]> record(String id) {
@@ -95,7 +95,7 @@ class MessageBroadcastConsumerTest {
         consumer.accept(Flux.just(raw(legacy)));
 
         verify(broadcaster).accept(new MessageBroadcastDTO("m-0", "sender", "Sender", "alice", "conv-1", "hi",
-                SENT_AT, null, null));
+                SENT_AT, null, null, null));
     }
 
     @Test

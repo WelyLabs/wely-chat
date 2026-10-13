@@ -3,9 +3,11 @@ package com.calendar.chat.infrastructure.messaging.mappers;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.infrastructure.messaging.models.MessageBroadcastDTO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 import org.mapstruct.factory.Mappers;
 
 import java.time.Instant;
@@ -30,7 +32,7 @@ class MessageBroadcastMapperTest {
         MessageBroadcastDTO dto = mapper.toBroadcastDTO(new LiveMessage(withPhoto(signed), BroadcastKind.UPDATED));
 
         assertThat(dto).isEqualTo(new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "Podium", SENT_AT,
-                new MessageBroadcastDTO.PhotoDTO("chat/c1/m1.jpg", 1600, 1200, false), "UPDATED"));
+                new MessageBroadcastDTO.PhotoDTO("chat/c1/m1.jpg", 1600, 1200, false), "TEXT", "UPDATED"));
     }
 
     @Test
@@ -42,7 +44,7 @@ class MessageBroadcastMapperTest {
 
     @Test
     void toLiveMessage_shouldReadARecordWithoutKindAsNew() {
-        MessageBroadcastDTO legacy = new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "hi", SENT_AT, null, null);
+        MessageBroadcastDTO legacy = new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "hi", SENT_AT, null, null, null);
 
         LiveMessage live = mapper.toLiveMessage(legacy);
 
@@ -53,7 +55,7 @@ class MessageBroadcastMapperTest {
     @Test
     void toLiveMessage_shouldRefuseAnUnknownKind() {
         // Thrown inside the consumer's per-record dispatch: one dropped record, not a deaf pod.
-        MessageBroadcastDTO future = new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "hi", SENT_AT, null, "DELETED");
+        MessageBroadcastDTO future = new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "hi", SENT_AT, null, null, "DELETED");
 
         assertThatThrownBy(() -> mapper.toLiveMessage(future)).isInstanceOf(IllegalArgumentException.class);
     }
@@ -69,5 +71,23 @@ class MessageBroadcastMapperTest {
         assertThat(mapper.toLiveMessage(null)).isNull();
         assertThat(mapper.toMessage(null)).isNull();
         assertThat(mapper.toPhotoDTO(null)).isNull();
+    }
+
+    @Test
+    void toLiveMessage_shouldRoundTripASystemMessage() {
+        LiveMessage live = new LiveMessage(Message.system("n1", "Date fixée", SENT_AT), BroadcastKind.NEW);
+
+        MessageBroadcastDTO dto = mapper.toBroadcastDTO(live);
+
+        assertThat(dto.type()).isEqualTo("SYSTEM");
+        assertThat(mapper.toLiveMessage(dto)).isEqualTo(live);
+    }
+
+    @Test
+    @DisplayName("a record from a pod that predates types is a text message")
+    void toMessage_shouldReadARecordWithoutTypeAsText() {
+        MessageBroadcastDTO legacy = new MessageBroadcastDTO("m1", "alice", "Alice", "bob", "c1", "hi", SENT_AT, null, null, "NEW");
+
+        assertThat(mapper.toMessage(legacy).type()).isEqualTo(MessageType.TEXT);
     }
 }

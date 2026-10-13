@@ -7,6 +7,7 @@ import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
@@ -38,7 +39,7 @@ class ConversationMapperTest {
     }
 
     private static MessageEntity messageEntity() {
-        return new MessageEntity("m-1", "alice", "Alice", "hello", SENT_AT, null);
+        return new MessageEntity("m-1", "alice", "Alice", "hello", SENT_AT, null, null);
     }
 
     @Test
@@ -175,7 +176,7 @@ class ConversationMapperTest {
         entity.setConversationId("conv-1");
         entity.setBucketIndex(3);
         entity.setMessages(List.of(messageEntity(),
-                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusSeconds(1 * 60), null)));
+                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusSeconds(1 * 60), null, null)));
 
         MessageBucket bucket = mapper.toMessageBucket(entity);
 
@@ -227,7 +228,7 @@ class ConversationMapperTest {
 
     @Test
     void toMessage_shouldKeepARemovedPhoto_andATextMessageWithoutOne() {
-        assertThat(mapper.toMessage(new MessageEntity("m-1", "a", "A", "", SENT_AT, new PhotoEntity(null, 0, 0, true))).photo())
+        assertThat(mapper.toMessage(new MessageEntity("m-1", "a", "A", "", SENT_AT, new PhotoEntity(null, 0, 0, true), null)).photo())
                 .isEqualTo(Photo.REMOVED);
         assertThat(mapper.toMessage(messageEntity()).photo()).isNull();
     }
@@ -238,5 +239,29 @@ class ConversationMapperTest {
                 "EVENT", "event-1", "Board games", 2L, "alice");
 
         assertThat(mapper.toConversationDetail(entity).getOrganizerId()).isEqualTo("alice");
+    }
+
+    @Test
+    @DisplayName("a text message stores no type, and an untyped entity reads back as TEXT")
+    void toMessageEntity_shouldLeaveTheTypeOutForAText() {
+        assertThat(mapper.toMessageEntity(message()).type()).isNull();
+        assertThat(mapper.toMessage(messageEntity()).type()).isEqualTo(MessageType.TEXT);
+    }
+
+    @Test
+    void toMessageEntity_shouldRoundTripASystemMessage() {
+        Message notice = Message.system("n-1", "Date fixée", SENT_AT);
+
+        MessageEntity entity = mapper.toMessageEntity(notice);
+
+        assertThat(entity.type()).isEqualTo("SYSTEM");
+        assertThat(mapper.toMessage(entity).type()).isEqualTo(MessageType.SYSTEM);
+    }
+
+    @Test
+    void storedType_shouldBeNullForTextAndNull() {
+        assertThat(mapper.storedType(null)).isNull();
+        assertThat(mapper.storedType(MessageType.TEXT)).isNull();
+        assertThat(mapper.storedType(MessageType.SYSTEM)).isEqualTo("SYSTEM");
     }
 }

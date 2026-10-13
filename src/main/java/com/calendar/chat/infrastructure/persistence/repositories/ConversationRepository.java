@@ -35,6 +35,9 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
      */
     Mono<ConversationEntity> findByIdAndParticipantIdsContaining(String id, String userId);
 
+    /** An event's group, for the application itself: no member to scope it by. Never reached with a client's input. */
+    Mono<ConversationEntity> findByEventId(String eventId);
+
     /** An event's group, scoped to its members like {@link #findByIdAndParticipantIdsContaining}. */
     Mono<ConversationEntity> findByEventIdAndParticipantIdsContaining(String eventId, String userId);
 

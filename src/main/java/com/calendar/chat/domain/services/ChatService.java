@@ -7,6 +7,7 @@ import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.exception.ChatErrorCode;
@@ -14,6 +15,8 @@ import com.calendar.chat.exception.ChatException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,10 +26,12 @@ public class ChatService {
 
     private final ChatRepository chatRepository;
     private final MessageBroadcaster messageBroadcaster;
+    private final Clock clock;
 
-    public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster) {
+    public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster, Clock clock) {
         this.chatRepository = chatRepository;
         this.messageBroadcaster = messageBroadcaster;
+        this.clock = clock;
     }
 
     public Mono<ConversationDetail> readOrCreateConversation(List<String> participantIds) {
@@ -60,7 +65,8 @@ public class ChatService {
     public Mono<Message> sendMessage(Message incoming) {
         // Every message gets an id here: a photo is removed by the id of the message that carries it.
         Message message = incoming.id() == null ? new Message(UUID.randomUUID().toString(), incoming.senderId(), incoming.senderName(),
-                incoming.receiverId(), incoming.conversationId(), incoming.content(), incoming.timestamp(), incoming.photo()) : incoming;
+                incoming.receiverId(), incoming.conversationId(), incoming.content(), incoming.timestamp(), incoming.photo(),
+                incoming.type()) : incoming;
         return chatRepository.postMessage(message)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMapMany(Flux::fromIterable)
@@ -88,6 +94,40 @@ public class ChatService {
                             return Mono.empty();
                         }))
                 .then();
+    }
+
+    /**
+     * Posts an application notice in an event's group and pushes it to every member.
+     *
+     * <p>Its id is derived from the event and the text, so a redelivered record finds it stored
+     * and posts nothing; the same text posted again later (a date fixed, changed, then fixed
+     * back) is skipped too. Errors when the group does not exist yet, so the caller can retry
+     * once wely-events has announced it. A member whose broadcast fails is skipped: the notice
+     * is stored, and a retry would find it there and push nothing.
+     */
+    public Mono<Message> postSystemNotice(String eventId, String content) {
+        Message notice = Message.system(noticeId(eventId, content), content, clock.instant());
+        return chatRepository.postSystemMessage(eventId, notice)
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .flatMap(posted -> posted.duplicate()
+                        ? Mono.just(posted.message())
+                        : pushToMembers(posted).thenReturn(posted.message()));
+    }
+
+    private Mono<Void> pushToMembers(PostedMessage posted) {
+        return Flux.fromIterable(posted.participantIds())
+                .concatMap(recipientId -> messageBroadcaster
+                        .broadcast(new LiveMessage(addressedTo(posted.message(), recipientId), BroadcastKind.NEW))
+                        .onErrorResume(error -> {
+                            LOG.log(System.Logger.Level.WARNING, "Notice {0} not pushed to {1}: {2}",
+                                    posted.message().id(), recipientId, error.toString());
+                            return Mono.empty();
+                        }))
+                .then();
+    }
+
+    private static String noticeId(String eventId, String content) {
+        return UUID.nameUUIDFromBytes((eventId + "\n" + content).getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     /** Stream of messages addressed to this user, new or updated, from any instance. */
@@ -126,6 +166,6 @@ public class ChatService {
     /** The same message for one recipient: a group message is delivered once per member. */
     private static Message addressedTo(Message message, String recipientId) {
         return new Message(message.id(), message.senderId(), message.senderName(), recipientId,
-                message.conversationId(), message.content(), message.timestamp(), message.photo());
+                message.conversationId(), message.content(), message.timestamp(), message.photo(), message.type());
     }
 }

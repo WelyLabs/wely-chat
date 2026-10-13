@@ -122,7 +122,7 @@ public class PhotoService {
     private Mono<Void> pushRemoval(String conversationId, String messageId, String requesterId) {
         return Mono.defer(() -> chatRepository.findMessage(conversationId, messageId))
                 .map(message -> new Message(message.id(), message.senderId(), message.senderName(), null,
-                        conversationId, message.content(), message.timestamp(), Photo.REMOVED))
+                        conversationId, message.content(), message.timestamp(), Photo.REMOVED, message.type()))
                 .flatMap(removed -> chatService.broadcastUpdate(removed, requesterId))
                 .onErrorResume(error -> {
                     LOG.log(System.Logger.Level.WARNING, "Removal of photo {0} not pushed live: {1}", messageId, error.toString());
@@ -164,7 +164,7 @@ public class PhotoService {
                 .map(urls -> messages.stream().map(message -> message.hasStoredPhoto()
                         ? new Message(message.id(), message.senderId(), message.senderName(), message.receiverId(),
                                 message.conversationId(), message.content(), message.timestamp(),
-                                withUrl(message.photo(), urls))
+                                withUrl(message.photo(), urls), message.type())
                         : message).toList());
     }
 

@@ -4,6 +4,7 @@ import com.calendar.chat.application.dtos.LiveMessageDTO;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.models.Photo;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -26,7 +27,7 @@ class LiveMessageMapperTest {
                 BroadcastKind.UPDATED);
 
         assertThat(mapper.toDTO(live)).isEqualTo(
-                new LiveMessageDTO("m1", "alice", "Alice", "bob", "c1", "Podium", SENT_AT, photo, BroadcastKind.UPDATED));
+                new LiveMessageDTO("m1", "alice", "Alice", "bob", "c1", "Podium", SENT_AT, photo, MessageType.TEXT, BroadcastKind.UPDATED));
     }
 
     @Test
@@ -46,5 +47,16 @@ class LiveMessageMapperTest {
                 .contains("\"conversationId\":\"c1\"")
                 .contains("\"photo\":{\"key\":null,\"width\":0,\"height\":0,\"url\":null,\"removed\":true}")
                 .contains("\"kind\":\"UPDATED\"");
+    }
+
+    @Test
+    void toDTO_shouldCarryTheTypeAsItsName() {
+        LiveMessage live = new LiveMessage(Message.system("n1", "Date fixée", SENT_AT), BroadcastKind.NEW);
+
+        LiveMessageDTO dto = mapper.toDTO(live);
+        String json = JsonMapper.builder().build().writeValueAsString(dto);
+
+        assertThat(dto.type()).isEqualTo(MessageType.SYSTEM);
+        assertThat(json).contains("\"type\":\"SYSTEM\"").contains("\"senderId\":\"system\"");
     }
 }

@@ -25,4 +25,23 @@ class MessageTest {
         assertThat(carrying(Photo.stored("chat/c1/m1.jpg", 1600, 1200)).hasStoredPhoto()).isTrue();
         assertThat(carrying(Photo.REMOVED).hasStoredPhoto()).isFalse();
     }
+
+    @Test
+    void constructor_shouldReadAMissingTypeAsText() {
+        Message stored = new Message("m1", "alice", "Alice", null, "c1", "hi", Instant.EPOCH, null, null);
+
+        assertThat(stored.type()).isEqualTo(MessageType.TEXT);
+        assertThat(carrying(null).type()).isEqualTo(MessageType.TEXT);
+    }
+
+    @Test
+    void system_shouldMakeASystemMessageSignedByTheApplication() {
+        Message notice = Message.system("n1", "Date fixée", Instant.EPOCH);
+
+        assertThat(notice.type()).isEqualTo(MessageType.SYSTEM);
+        assertThat(notice.senderId()).isEqualTo(Message.SYSTEM_SENDER_ID);
+        assertThat(notice.senderName()).isEqualTo(Message.SYSTEM_SENDER_NAME);
+        assertThat(notice.conversationId()).isNull();
+        assertThat(notice.hasStoredPhoto()).isFalse();
+    }
 }
