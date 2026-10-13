@@ -1,10 +1,12 @@
 package com.calendar.chat.domain.services;
 
+import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationPhoto;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.StoredMedia;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -35,9 +38,11 @@ import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -72,6 +77,7 @@ class PhotoServiceTest {
         service = new PhotoService(chatRepository, photoRepository, mediaStore, chatService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(mediaStore.urls(any())).thenAnswer(call -> Mono.just(signedUrls(call.getArgument(0))));
+        lenient().when(chatRepository.findMessage(anyString(), anyString())).thenReturn(Mono.empty());
     }
 
     private static Map<String, String> signedUrls(Collection<String> keys) {
@@ -234,6 +240,7 @@ class PhotoServiceTest {
                 .verify();
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
         verify(mediaStore, never()).delete(any());
+        verify(chatService, never()).broadcastUpdate(any(), any());
     }
 
     @Test
@@ -268,6 +275,81 @@ class PhotoServiceTest {
         when(mediaStore.delete(anyString())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
 
         StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+    }
+
+    private void removable(String senderId) {
+        when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf(senderId)));
+        when(chatRepository.markPhotoRemoved("c1", "m1")).thenReturn(Mono.empty());
+        when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
+        when(mediaStore.delete(anyString())).thenReturn(Mono.empty());
+        // As read back from its bucket: no conversation id, which the mapper leaves out.
+        when(chatRepository.findMessage("c1", "m1")).thenReturn(Mono.just(
+                new Message("m1", senderId, "Alice", null, null, "Le podium", NOW, Photo.REMOVED)));
+    }
+
+    @Test
+    @DisplayName("the other members see the photo go without reloading: the message is pushed again, removed")
+    void remove_shouldPushTheUpdatedMessage_toTheOtherMembers() {
+        member(eventGroup, "olivia");
+        removable("alice");
+        when(chatService.broadcastUpdate(any(), eq("olivia"))).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.remove("c1", "m1", "olivia")).verifyComplete();
+
+        verify(chatService).broadcastUpdate(argThat(message -> message.id().equals("m1")
+                && message.conversationId().equals("c1")
+                && message.senderId().equals("alice")
+                && message.content().equals("Le podium")
+                && message.timestamp().equals(NOW)
+                && Photo.REMOVED.equals(message.photo())), eq("olivia"));
+    }
+
+    @Test
+    @DisplayName("the push comes after the message is marked and the file deleted")
+    void remove_shouldPushAfterMarkingTheMessage() {
+        member(eventGroup, "alice");
+        removable("alice");
+        when(chatService.broadcastUpdate(any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+
+        InOrder order = inOrder(chatRepository, mediaStore, chatService);
+        order.verify(chatRepository).markPhotoRemoved("c1", "m1");
+        order.verify(mediaStore).delete("chat/c1/m1.jpg");
+        order.verify(chatRepository).findMessage("c1", "m1");
+        order.verify(chatService).broadcastUpdate(any(), eq("alice"));
+    }
+
+    @Test
+    @DisplayName("a push that fails costs the live update, not the removal")
+    void remove_shouldSucceed_whenThePushFails() {
+        member(eventGroup, "alice");
+        removable("alice");
+        when(chatService.broadcastUpdate(any(), any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
+
+        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+    }
+
+    @Test
+    void remove_shouldSucceed_whenTheMessageCannotBeReadBack() {
+        member(eventGroup, "alice");
+        removable("alice");
+        when(chatRepository.findMessage("c1", "m1")).thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        verify(chatService, never()).broadcastUpdate(any(), any());
+    }
+
+    @Test
+    void signed_shouldSignALiveMessage_andKeepItsKind() {
+        Message stored = new Message("m1", "alice", "Alice", "bob", "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
+
+        StepVerifier.create(service.signed(new LiveMessage(stored, BroadcastKind.NEW)))
+                .assertNext(live -> {
+                    assertThat(live.kind()).isEqualTo(BroadcastKind.NEW);
+                    assertThat(live.message().photo().url()).isEqualTo("https://media/chat/c1/m1.jpg");
+                })
+                .verifyComplete();
     }
 
     @Test

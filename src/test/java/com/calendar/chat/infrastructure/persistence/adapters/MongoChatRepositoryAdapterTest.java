@@ -367,4 +367,35 @@ class MongoChatRepositoryAdapterTest {
         verify(messageBucketRepository).markPhotoRemoved("conv-1", "m-1");
         verify(conversationRepository).markLastPhotoRemoved("conv-1", "m-1");
     }
+
+    @Test
+    void findMessage_shouldReadTheOneMessageFromItsBucket() {
+        MessageEntity entity = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null);
+        Message message = new Message("m-1", "alice", "Alice", null, null, "Podium", Instant.EPOCH);
+        when(messageBucketRepository.findWithMessage("conv-1", "m-1"))
+                .thenReturn(Mono.just(new MessageBucketEntity("b-1", "conv-1", 3, List.of(entity))));
+        when(conversationMapper.toMessage(entity)).thenReturn(message);
+
+        StepVerifier.create(adapter.findMessage("conv-1", "m-1")).expectNext(message).verifyComplete();
+    }
+
+    @Test
+    void findMessage_shouldBeEmpty_whenNoBucketHoldsTheMessage() {
+        when(messageBucketRepository.findWithMessage("conv-1", "gone")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.findMessage("conv-1", "gone")).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("only the requested message is returned, even if the projection were to hand back more")
+    void findMessage_shouldKeepOnlyTheRequestedMessage() {
+        MessageEntity other = new MessageEntity("m-0", "bob", "Bob", "hi", Instant.EPOCH, null);
+        MessageEntity wanted = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null);
+        Message message = new Message("m-1", "alice", "Alice", null, null, "Podium", Instant.EPOCH);
+        when(messageBucketRepository.findWithMessage("conv-1", "m-1"))
+                .thenReturn(Mono.just(new MessageBucketEntity("b-1", "conv-1", 3, List.of(other, wanted))));
+        when(conversationMapper.toMessage(wanted)).thenReturn(message);
+
+        StepVerifier.create(adapter.findMessage("conv-1", "m-1")).expectNext(message).verifyComplete();
+    }
 }

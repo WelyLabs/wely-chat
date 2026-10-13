@@ -2,6 +2,7 @@ package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationPhoto;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
@@ -100,8 +101,9 @@ public class PhotoService {
 
     /**
      * Removes a photo for everyone. The message stays, marked as having held a photo, so the thread
-     * keeps its shape; the file goes last, so a failure there leaves an orphan file rather than a
-     * message pointing at nothing.
+     * keeps its shape; the file goes after, so a failure there leaves an orphan file rather than a
+     * message pointing at nothing. The other members then get the message again, marked UPDATED,
+     * so their thread changes without a reload; a failure there does not fail the removal.
      */
     public Mono<Void> remove(String conversationId, String messageId, String requesterId) {
         return requireMember(conversationId, requesterId)
@@ -112,12 +114,30 @@ public class PhotoService {
                                 : Mono.error(new ChatException(ChatErrorCode.PHOTO_REMOVAL_DENIED))))
                 .flatMap(photo -> chatRepository.markPhotoRemoved(conversationId, messageId)
                         .then(Mono.defer(() -> photoRepository.delete(conversationId, messageId)))
-                        .then(Mono.defer(() -> mediaStore.delete(photo.photo().key()).onErrorResume(error -> Mono.empty()))));
+                        .then(Mono.defer(() -> mediaStore.delete(photo.photo().key()).onErrorResume(error -> Mono.empty())))
+                        .then(pushRemoval(conversationId, messageId, requesterId)));
+    }
+
+    /** The stored message carries the caption and sender name the index lacks; read after the update, its photo is removed. */
+    private Mono<Void> pushRemoval(String conversationId, String messageId, String requesterId) {
+        return Mono.defer(() -> chatRepository.findMessage(conversationId, messageId))
+                .map(message -> new Message(message.id(), message.senderId(), message.senderName(), null,
+                        conversationId, message.content(), message.timestamp(), Photo.REMOVED))
+                .flatMap(removed -> chatService.broadcastUpdate(removed, requesterId))
+                .onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.WARNING, "Removal of photo {0} not pushed live: {1}", messageId, error.toString());
+                    return Mono.empty();
+                });
     }
 
     /** The message as a client may see it: a stored photo gets a URL that works for a while. */
     public Mono<Message> signed(Message message) {
         return signedAll(List.of(message)).map(List::getFirst);
+    }
+
+    /** A message on its way to a recipient's stream: signed by the pod that delivers it. */
+    public Mono<LiveMessage> signed(LiveMessage live) {
+        return signed(live.message()).map(message -> new LiveMessage(message, live.kind()));
     }
 
     public Mono<MessageBucket> signed(MessageBucket bucket) {

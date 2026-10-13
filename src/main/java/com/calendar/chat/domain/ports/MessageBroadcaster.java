@@ -1,6 +1,6 @@
 package com.calendar.chat.domain.ports;
 
-import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.LiveMessage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -20,9 +20,9 @@ import reactor.core.publisher.Mono;
  */
 public interface MessageBroadcaster {
 
-    /** Hands a message to every instance, including the one calling. */
-    Mono<Void> broadcast(Message message);
+    /** Hands a message, new or updated, to every instance, including the one calling. */
+    Mono<Void> broadcast(LiveMessage message);
 
     /** Messages addressed to this user, whichever instance accepted them. */
-    Flux<Message> subscribe(String userId);
+    Flux<LiveMessage> subscribe(String userId);
 }

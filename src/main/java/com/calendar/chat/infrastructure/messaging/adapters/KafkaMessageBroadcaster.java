@@ -1,6 +1,6 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
-import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.infrastructure.messaging.mappers.MessageBroadcastMapper;
 import com.calendar.chat.infrastructure.messaging.models.MessageBroadcastDTO;
@@ -55,7 +55,7 @@ public class KafkaMessageBroadcaster implements MessageBroadcaster {
      * leaves, which here means the pod stops delivering consumed records for good the first
      * time every chat stream on it closes.
      */
-    private final Sinks.Many<Message> inbound =
+    private final Sinks.Many<LiveMessage> inbound =
             Sinks.many().multicast().onBackpressureBuffer(Queues.SMALL_BUFFER_SIZE, false);
 
     public KafkaMessageBroadcaster(StreamBridge streamBridge, MessageBroadcastMapper mapper) {
@@ -64,26 +64,26 @@ public class KafkaMessageBroadcaster implements MessageBroadcaster {
     }
 
     @Override
-    public Mono<Void> broadcast(Message message) {
-        return Mono.fromCallable(() -> streamBridge.send(DESTINATION, mapper.toBroadcastDTO(message)))
+    public Mono<Void> broadcast(LiveMessage live) {
+        return Mono.fromCallable(() -> streamBridge.send(DESTINATION, mapper.toBroadcastDTO(live)))
                 .doOnNext(sent -> {
                     if (!Boolean.TRUE.equals(sent)) {
                         // Logged rather than raised: the message is already persisted, so
                         // losing the live update costs a refresh, not the message.
-                        log.error("Could not broadcast a message for {}", message.receiverId());
+                        log.error("Could not broadcast a message for {}", live.message().receiverId());
                     }
                 })
                 .then();
     }
 
     @Override
-    public Flux<Message> subscribe(String userId) {
-        return inbound.asFlux().filter(message -> Objects.equals(message.receiverId(), userId));
+    public Flux<LiveMessage> subscribe(String userId) {
+        return inbound.asFlux().filter(live -> Objects.equals(live.message().receiverId(), userId));
     }
 
     /** Called by {@code MessageBroadcastConsumer} for each record read from the topic. */
     void accept(MessageBroadcastDTO dto) {
-        Sinks.EmitResult result = inbound.tryEmitNext(mapper.toMessage(dto));
+        Sinks.EmitResult result = inbound.tryEmitNext(mapper.toLiveMessage(dto));
         if (result.isFailure()) {
             log.error("Dropped a broadcast message for {}: {}", dto.receiverId(), result);
         }

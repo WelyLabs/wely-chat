@@ -46,4 +46,7 @@ public interface ChatRepository {
 
     /** Marks a message's photo as removed, in its bucket and in the conversation's preview. */
     Mono<Void> markPhotoRemoved(String conversationId, String messageId);
+
+    /** One message of a conversation, as stored; empty if there is none with this id. */
+    Mono<Message> findMessage(String conversationId, String messageId);
 }

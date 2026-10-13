@@ -39,7 +39,7 @@ class MessageBroadcastConsumerTest {
     private static final Instant SENT_AT = Instant.parse("2025-01-01T12:00:00Z");
 
     private static MessageBroadcastDTO payload(String id) {
-        return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT, null);
+        return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT, null, "NEW");
     }
 
     private static Message<byte[]> record(String id) {
@@ -83,6 +83,19 @@ class MessageBroadcastConsumerTest {
 
         verify(broadcaster).accept(payload("m-1"));
         verify(broadcaster, times(1)).accept(any());
+    }
+
+    @Test
+    @DisplayName("a record written before kinds existed is read, without a kind")
+    void messageBroadcast_shouldReadARecordWithoutKind() {
+        String legacy = "{\"id\":\"m-0\",\"senderId\":\"sender\",\"senderName\":\"Sender\","
+                + "\"receiverId\":\"alice\",\"conversationId\":\"conv-1\",\"content\":\"hi\","
+                + "\"timestamp\":\"2025-01-01T12:00:00Z\"}";
+
+        consumer.accept(Flux.just(raw(legacy)));
+
+        verify(broadcaster).accept(new MessageBroadcastDTO("m-0", "sender", "Sender", "alice", "conv-1", "hi",
+                SENT_AT, null, null));
     }
 
     @Test

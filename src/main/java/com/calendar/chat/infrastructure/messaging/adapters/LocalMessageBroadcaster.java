@@ -1,6 +1,6 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
-import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -36,7 +36,7 @@ import java.util.Objects;
 @ConditionalOnProperty(name = "chat.broadcast.mode", havingValue = "local", matchIfMissing = true)
 public class LocalMessageBroadcaster implements MessageBroadcaster {
 
-    private final Sinks.Many<Message> sink =
+    private final Sinks.Many<LiveMessage> sink =
             Sinks.many().multicast().onBackpressureBuffer(Queues.SMALL_BUFFER_SIZE, false);
 
     public LocalMessageBroadcaster() {
@@ -45,18 +45,18 @@ public class LocalMessageBroadcaster implements MessageBroadcaster {
     }
 
     @Override
-    public Mono<Void> broadcast(Message message) {
+    public Mono<Void> broadcast(LiveMessage live) {
         return Mono.fromRunnable(() -> {
-            Sinks.EmitResult result = sink.tryEmitNext(message);
+            Sinks.EmitResult result = sink.tryEmitNext(live);
             if (result.isFailure()) {
                 // Checked, unlike before: a dropped message used to leave no trace at all.
-                log.error("Dropped a message for {}: {}", message.receiverId(), result);
+                log.error("Dropped a message for {}: {}", live.message().receiverId(), result);
             }
         });
     }
 
     @Override
-    public Flux<Message> subscribe(String userId) {
-        return sink.asFlux().filter(message -> Objects.equals(message.receiverId(), userId));
+    public Flux<LiveMessage> subscribe(String userId) {
+        return sink.asFlux().filter(live -> Objects.equals(live.message().receiverId(), userId));
     }
 }

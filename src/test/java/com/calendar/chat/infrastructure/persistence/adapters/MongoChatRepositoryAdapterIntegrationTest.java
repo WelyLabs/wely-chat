@@ -368,4 +368,25 @@ class MongoChatRepositoryAdapterIntegrationTest {
                 .assertNext(summary -> assertThat(summary.lastMessage().photo()).isEqualTo(Photo.REMOVED))
                 .verifyComplete();
     }
+
+    @Test
+    @DisplayName("a message is read alone from its bucket, photo removed once marked")
+    void findMessage_shouldReadTheMessageAsStored() {
+        ConversationDetail conversation = aConversation();
+        post(messageFrom(ALICE, conversation.getId(), "before")).block();
+        Message photo = new Message("photo-1", ALICE, "Alice", null, conversation.getId(), "le podium",
+                Instant.now(), Photo.stored("chat/" + conversation.getId() + "/photo-1.jpg", 1600, 1200));
+        post(photo).block();
+        adapter.markPhotoRemoved(conversation.getId(), "photo-1").block();
+
+        StepVerifier.create(adapter.findMessage(conversation.getId(), "photo-1"))
+                .assertNext(read -> {
+                    assertThat(read.id()).isEqualTo("photo-1");
+                    assertThat(read.senderName()).isEqualTo("Alice");
+                    assertThat(read.content()).isEqualTo("le podium");
+                    assertThat(read.photo()).isEqualTo(Photo.REMOVED);
+                })
+                .verifyComplete();
+        StepVerifier.create(adapter.findMessage(conversation.getId(), "missing")).verifyComplete();
+    }
 }

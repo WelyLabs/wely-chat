@@ -3,6 +3,11 @@ package com.calendar.chat.application.messaging;
 import static org.mockito.Mockito.lenient;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.application.dtos.ChatInputDTO;
+import com.calendar.chat.application.dtos.LiveMessageDTO;
+import com.calendar.chat.application.mappers.LiveMessageMapper;
+import com.calendar.chat.domain.models.BroadcastKind;
+import com.calendar.chat.domain.models.LiveMessage;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.PresenceService;
@@ -13,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mapstruct.factory.Mappers;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -42,8 +48,9 @@ class MessageSocketControllerTest {
     @BeforeEach
     void setUp() {
         // Text messages carry no photo: signing hands them back unchanged.
-        lenient().when(photoService.signed(any(Message.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
-        controller = new MessageSocketController(chatService, presenceService, photoService);
+        lenient().when(photoService.signed(any(LiveMessage.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
+        controller = new MessageSocketController(chatService, presenceService, photoService,
+                Mappers.getMapper(LiveMessageMapper.class));
     }
 
     @Test
@@ -89,12 +96,13 @@ class MessageSocketControllerTest {
     @DisplayName("the stream only delivers messages addressed to the caller")
     void streamMessage_shouldScopeTheStreamToTheCaller() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
-        Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", Instant.now());
-        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.just(mine));
+        Instant at = Instant.now();
+        Message mine = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", at);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.just(new LiveMessage(mine, BroadcastKind.NEW)));
         when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
 
         StepVerifier.create(controller.streamMessage(jwt))
-                .expectNext(mine)
+                .expectNext(new LiveMessageDTO("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", at, null, BroadcastKind.NEW))
                 .verifyComplete();
 
         verify(chatService).streamMessages(SENDER_ID);
@@ -104,7 +112,7 @@ class MessageSocketControllerTest {
     @DisplayName("the caller counts as online while their stream is open")
     void streamMessage_shouldTrackTheCallersPresence() {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
-        Flux<Message> stream = Flux.empty();
+        Flux<LiveMessage> stream = Flux.empty();
         when(chatService.streamMessages(SENDER_ID)).thenReturn(stream);
         // The stream is wrapped to sign photo URLs on the way out: what reaches track is that wrapper.
         when(presenceService.track(eq(SENDER_ID), any())).thenReturn(Flux.empty());
@@ -112,5 +120,35 @@ class MessageSocketControllerTest {
         StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
 
         verify(presenceService).track(eq(SENDER_ID), any());
+    }
+
+    @Test
+    @DisplayName("each frame tells the client whether to append it or replace the message with the same id")
+    void streamMessage_shouldExposeTheKindAndTheSignedPhoto() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        Instant at = Instant.now();
+        Message removed = new Message("m-1", "other", "Other", SENDER_ID, "conv-1", "Podium", at, Photo.REMOVED);
+        Message stored = new Message("m-2", "other", "Other", SENDER_ID, "conv-1", "", at, Photo.stored("chat/conv-1/m-2.jpg", 10, 10));
+        Photo signedPhoto = new Photo("chat/conv-1/m-2.jpg", 10, 10, "https://signed", false);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.just(
+                new LiveMessage(removed, BroadcastKind.UPDATED), new LiveMessage(stored, BroadcastKind.NEW)));
+        when(photoService.signed(any(LiveMessage.class))).thenAnswer(call -> {
+            LiveMessage live = call.getArgument(0);
+            return Mono.just(live.message().hasStoredPhoto()
+                    ? new LiveMessage(new Message("m-2", "other", "Other", SENDER_ID, "conv-1", "", at, signedPhoto), live.kind())
+                    : live);
+        });
+        when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
+
+        StepVerifier.create(controller.streamMessage(jwt))
+                .assertNext(frame -> {
+                    assertThat(frame.kind()).isEqualTo(BroadcastKind.UPDATED);
+                    assertThat(frame.photo()).isEqualTo(Photo.REMOVED);
+                })
+                .assertNext(frame -> {
+                    assertThat(frame.kind()).isEqualTo(BroadcastKind.NEW);
+                    assertThat(frame.photo().url()).isEqualTo("https://signed");
+                })
+                .verifyComplete();
     }
 }
