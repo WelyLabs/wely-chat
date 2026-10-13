@@ -40,16 +40,6 @@ import static org.assertj.core.api.Assertions.assertThat;
         // The shared test profile selects in-process delivery, which is the whole thing this
         // class is not testing.
         "chat.broadcast.mode=kafka",
-        // The in-cluster and containerised brokers speak PLAINTEXT; the SASL settings in
-        // application.properties exist for a managed broker.
-        "spring.kafka.properties.security.protocol=PLAINTEXT",
-        "spring.cloud.stream.kafka.binder.configuration.security.protocol=PLAINTEXT",
-        // The JAAS string in application.properties interpolates these two, and they are
-        // injected by Kubernetes. Left unresolved, the binder built a malformed sasl.jaas.config
-        // and failed to create its admin client — before PLAINTEXT ever made SASL irrelevant.
-        // Values, not blanks: an empty mechanism is as invalid to Kafka as an unresolved one.
-        "KAFKA_KEY=test",
-        "KAFKA_SECRET=test",
         "spring.cloud.function.definition=messageBroadcast",
         "chat.broadcast.topic=MESSAGE_BROADCAST_IT",
         // The broker in the container creates the topic; production points at one where the
