@@ -10,6 +10,7 @@ import java.util.List;
 public record EventGroupChangedDTO(
         String eventId,
         String title,
+        String organizerId,
         List<String> memberIds,
         long version
 ) {}

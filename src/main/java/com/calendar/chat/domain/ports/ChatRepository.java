@@ -43,4 +43,7 @@ public interface ChatRepository {
      * than the stored one is ignored, so a replayed or reordered record cannot undo a change.
      */
     Mono<Void> saveEventGroup(EventGroup group);
+
+    /** Marks a message's photo as removed, in its bucket and in the conversation's preview. */
+    Mono<Void> markPhotoRemoved(String conversationId, String messageId);
 }

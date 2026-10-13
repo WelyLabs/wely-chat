@@ -38,7 +38,37 @@ public enum ChatErrorCode {
             "CHT-BUS-003",
             "Presence not available",
             "Presence is only shown for people you share a conversation with.",
-            HttpStatus.NOT_FOUND);
+            HttpStatus.NOT_FOUND),
+
+    PHOTO_INVALID(
+            "CHT-BUS-004",
+            "Photo not accepted",
+            "Send a JPEG, PNG, GIF or BMP picture of at most 8000 pixels per side.",
+            HttpStatus.BAD_REQUEST),
+
+    PHOTO_TOO_LARGE(
+            "CHT-BUS-005",
+            "Photo too large",
+            "The photo must be smaller than 10 MB.",
+            HttpStatus.CONTENT_TOO_LARGE),
+
+    PHOTO_NOT_FOUND(
+            "CHT-BUS-006",
+            "Photo not found",
+            "No photo of this conversation matches the given message.",
+            HttpStatus.NOT_FOUND),
+
+    PHOTO_REMOVAL_DENIED(
+            "CHT-BUS-007",
+            "Not yours to remove",
+            "A photo is removed by whoever sent it, or in an event's group by its organizer.",
+            HttpStatus.FORBIDDEN),
+
+    MEDIA_UNAVAILABLE(
+            "CHT-TEC-001",
+            "Photo storage unavailable",
+            "The photo could not be stored or removed; try again shortly.",
+            HttpStatus.BAD_GATEWAY);
 
     private final String code;
     private final String title;

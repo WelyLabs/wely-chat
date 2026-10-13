@@ -198,6 +198,9 @@ Préfixées par `/chat-service`, exposées sur `/api/v1/chat-service/**`.
 | `GET` | `/conversations/all` | Liste des conversations de l'utilisateur : participants et aperçu du dernier message |
 | `GET` | `/conversations/{id}` | Détail d'une conversation (dernier bucket de messages) |
 | `GET` | `/conversations/{id}/loadMessages?bucketIndex=` | Remonte l'historique, bucket par bucket |
+| `POST` | `/conversations/{id}/photos` | Envoie une photo (multipart `file`, `caption` facultatif) : un message qui la porte, 201 |
+| `GET` | `/conversations/{id}/photos?before=&limit=` | L'onglet Médias : les photos de la conversation, les plus récentes d'abord, 30 par page (60 au plus) |
+| `DELETE` | `/conversations/{id}/photos/{messageId}` | Retire une photo (204) : son auteur, ou l'organisateur dans le groupe d'un événement |
 | `GET` | `/presence/{userId}` | En ligne ou pas, et vu pour la dernière fois quand — seulement pour quelqu'un avec qui on a une conversation |
 
 ### Modèles
@@ -218,6 +221,18 @@ public record ConversationSummary(String id, ConversationType type, String title
 
 ---
 
+## Photos
+
+Comme dans une messagerie : une photo s'envoie dans la conversation, s'affiche dans le fil et se retrouve dans un onglet Médias.
+
+- **Stockées dans Garage**, bucket `wely-chat-media`, sous `chat/<conversation>/<message>.jpg`. Le message garde la **clé** et la taille, jamais une URL : chaque lecture (historique, conversation, flux RSocket) la signe pour **1 h**, et c'est le pod qui livre le message qui signe — la clé seule passe par Kafka.
+- **Normalisées à l'envoi** (ImageIO) : décodage = vérification du type, 8000 px par côté et 40 mégapixels au plus, côté le plus long ramené à 1600 px, proportions gardées, réencodage JPEG — les EXIF, dont la position GPS, disparaissent. L'orientation EXIF est appliquée par l'application web, qui redessine la photo sur un canvas avant l'envoi. 10 Mo au plus.
+- **Ordre des écritures** : le fichier d'abord, puis le message ; si le message échoue, le fichier est supprimé. L'entrée de l'onglet Médias vient en dernier et ne fait pas échouer l'envoi.
+- **Qui voit** : les membres **actuels** de la conversation. Rejoindre le groupe d'un événement donne accès aux photos d'avant ; le quitter retire l'accès.
+- **Qui retire** : l'auteur, et dans le groupe d'un événement son organisateur — nommé par `EVENT_GROUP_CHANGED` (`organizerId`), ou à défaut le premier membre, là où wely-events l'a toujours placé. Le message reste, marqué « photo retirée », pour que le fil garde sa forme ; le fichier part en dernier (un échec laisse un fichier orphelin, pas un message cassé).
+- **Onglet Médias** : une collection à part, `conversation_photos` (`{conversationId, sentAt}`, unicité sur `{conversationId, messageId}`), pour paginer sans dérouler les buckets de 50 messages.
+- **Identifiants de message** : attribués par le serveur (UUID) à chaque envoi — une photo se retire par l'identifiant du message qui la porte.
+
 ## Gestion des erreurs
 
 | Code | HTTP | Signification |
@@ -225,6 +240,11 @@ public record ConversationSummary(String id, ConversationType type, String title
 | `CHT-BUS-001` | 404 | Conversation introuvable **ou** n'appartenant pas à l'appelant |
 | `CHT-BUS-002` | 404 | Page d'historique inexistante à cet index |
 | `CHT-BUS-003` | 404 | Présence indisponible : utilisateur inconnu **ou** sans conversation commune |
+| `CHT-BUS-004` | 400 | Photo refusée : pas une image acceptée, ou trop grande en pixels ; légende trop longue |
+| `CHT-BUS-005` | 413 | Photo de plus de 10 Mo |
+| `CHT-BUS-006` | 404 | Pas de photo pour ce message dans cette conversation |
+| `CHT-BUS-007` | 403 | Ni l'auteur de la photo, ni l'organisateur de l'événement |
+| `CHT-TEC-001` | 502 | Stockage des photos injoignable |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `CHT-TEC-000` | 500 | Erreur inattendue |
@@ -366,6 +386,8 @@ kubectl apply -k overlays/local --server-side
 - **`@Transactional` est inopérant** : aucun `ReactiveMongoTransactionManager` n'est déclaré, la
   création conversation + bucket initial n'est donc pas atomique. L'ajout d'un message, lui, l'est
   désormais — c'est un `$push` conditionné sur l'absence de `messages.49`.
+- **Le retrait d'une photo n'est pas poussé en direct.** Les autres membres le voient au prochain
+  chargement de la conversation ; le flux RSocket ne porte que les nouveaux messages.
 - **Les groupes de consommation s'accumulent.** Un groupe par pod, jetable : chaque redémarrage
   en laisse un derrière lui. Sans rétention courte sur le topic, ces offsets s'empilent côté
   broker ; une purge périodique des groupes inactifs reste à mettre en place.

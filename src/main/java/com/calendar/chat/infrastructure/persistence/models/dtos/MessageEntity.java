@@ -13,14 +13,15 @@ import java.util.Map;
  * two, with {@code unmappedTargetPolicy = ERROR} so a field cannot be dropped silently — which
  * is exactly what happened to the message id before.
  *
- * <p>Type, reactions and attachments are not stored: {@code MessageType} exists in the domain
- * and nothing writes anything but TEXT. They belong here the day a feature needs them, not as
- * commented-out fields.
+ * <p>A photo is stored as its key and size, never as a URL: URLs are signed when a message is
+ * read, and expire. Reactions are not stored: they belong here the day a feature needs them.
  */
 public record MessageEntity(
         @Field("m_id") String messageId,
         @Field("s_id") String senderId,
         @Field("s_un") String senderName,
         @Field("txt") String content,
-        @Field("ts") Instant timestamp
+        @Field("ts") Instant timestamp,
+        /** Absent on a text message. */
+        @Field("ph") PhotoEntity photo
 ) {}

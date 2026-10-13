@@ -4,6 +4,7 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +21,11 @@ import java.util.List;
 public class ConversationController {
 
     private final ChatService chatService;
+    private final PhotoService photoService;
 
-    public ConversationController(ChatService chatService) {
+    public ConversationController(ChatService chatService, PhotoService photoService) {
         this.chatService = chatService;
+        this.photoService = photoService;
     }
 
     @GetMapping
@@ -31,7 +34,9 @@ public class ConversationController {
             @RequestParam String friendId) {
         String userId = jwt.getClaimAsString("businessId");
 
-        return chatService.readOrCreateConversation(List.of(userId, friendId)).map(ResponseEntity::ok);
+        return chatService.readOrCreateConversation(List.of(userId, friendId))
+                .map(photoService::signed)
+                .map(ResponseEntity::ok);
     }
 
     @GetMapping("{conversationId}/loadMessages")
@@ -42,6 +47,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readPreviousMessages(conversationId, bucketIndex, userId)
+                .map(photoService::signed)
                 .map(ResponseEntity::ok)
                 // An empty 404 tells a client nothing: an RFC 7807 response carries a
                 // stable code it can branch on.
@@ -55,6 +61,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readConversationById(conversationId, userId)
+                .map(photoService::signed)
                 .map(ResponseEntity::ok)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }
@@ -67,6 +74,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readEventConversation(eventId, userId)
+                .map(photoService::signed)
                 .map(ResponseEntity::ok)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }

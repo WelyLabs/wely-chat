@@ -39,7 +39,7 @@ class EventGroupConsumerTest {
     }
 
     private static Message<EventGroupChangedDTO> record(String eventId) {
-        return MessageBuilder.withPayload(new EventGroupChangedDTO(eventId, "t", List.of("a"), 1)).build();
+        return MessageBuilder.withPayload(new EventGroupChangedDTO(eventId, "t", "a", List.of("a"), 1)).build();
     }
 
     @Test
@@ -48,16 +48,16 @@ class EventGroupConsumerTest {
 
         consumer.eventGroup().accept(Flux.just(record("e1"), record("e2")));
 
-        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e1", "t", List.of("a"), 1));
-        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e2", "t", List.of("a"), 1));
+        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e1", "t", "a", List.of("a"), 1));
+        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e2", "t", "a", List.of("a"), 1));
     }
 
     @Test
     @DisplayName("a failing record is retried, then dropped without stopping the stream")
     void eventGroup_shouldRetryThenKeepConsuming() {
         AtomicInteger attempts = new AtomicInteger();
-        EventGroup failing = new EventGroup("e1", "t", List.of("a"), 1);
-        EventGroup next = new EventGroup("e2", "t", List.of("a"), 1);
+        EventGroup failing = new EventGroup("e1", "t", "a", List.of("a"), 1);
+        EventGroup next = new EventGroup("e2", "t", "a", List.of("a"), 1);
         when(chatService.applyEventGroup(failing)).thenReturn(Mono.defer(() -> {
             attempts.incrementAndGet();
             return Mono.error(new IllegalStateException("mongo down"));

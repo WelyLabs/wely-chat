@@ -16,5 +16,9 @@ public record MessageBroadcastDTO(
         String receiverId,
         String conversationId,
         String content,
-        Instant timestamp
-) {}
+        Instant timestamp,
+        /** Its storage key and size; never a URL, which each pod signs when it delivers the message. */
+        PhotoDTO photo
+) {
+    public record PhotoDTO(String key, int width, int height, boolean removed) {}
+}

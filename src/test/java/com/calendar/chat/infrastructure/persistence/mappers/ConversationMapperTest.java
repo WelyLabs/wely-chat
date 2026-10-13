@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.persistence.mappers;
 
+import com.calendar.chat.infrastructure.persistence.models.dtos.PhotoEntity;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.ConversationType;
@@ -36,7 +38,7 @@ class ConversationMapperTest {
     }
 
     private static MessageEntity messageEntity() {
-        return new MessageEntity("m-1", "alice", "Alice", "hello", SENT_AT);
+        return new MessageEntity("m-1", "alice", "Alice", "hello", SENT_AT, null);
     }
 
     @Test
@@ -122,7 +124,7 @@ class ConversationMapperTest {
     @DisplayName("an event group's summary carries its type, title and event")
     void toConversationSummary_shouldMapAnEventGroup() {
         ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
-                "EVENT", "event-1", "Board games", 2L);
+                "EVENT", "event-1", "Board games", 2L, "alice");
 
         ConversationSummary summary = mapper.toConversationSummary(entity);
 
@@ -135,7 +137,7 @@ class ConversationMapperTest {
     @DisplayName("an event group's detail carries its title and event, for the chat header")
     void toConversationDetail_shouldMapAnEventGroup() {
         ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
-                "EVENT", "event-1", "Board games", 2L);
+                "EVENT", "event-1", "Board games", 2L, "alice");
 
         ConversationDetail detail = mapper.toConversationDetail(entity);
 
@@ -173,7 +175,7 @@ class ConversationMapperTest {
         entity.setConversationId("conv-1");
         entity.setBucketIndex(3);
         entity.setMessages(List.of(messageEntity(),
-                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusSeconds(1 * 60))));
+                new MessageEntity("m-2", "bob", "Bob", "hi back", SENT_AT.plusSeconds(1 * 60), null)));
 
         MessageBucket bucket = mapper.toMessageBucket(entity);
 
@@ -208,5 +210,33 @@ class ConversationMapperTest {
         assertThat(mapper.toConversationSummary(null)).isNull();
         assertThat(mapper.toConversationDetail(null)).isNull();
         assertThat(mapper.toMessageBucket(null)).isNull();
+    }
+
+    @Test
+    @DisplayName("a photo is stored as its key and size, and comes back without a URL")
+    void toMessage_shouldCarryThePhoto_withoutStoringItsUrl() {
+        Message withPhoto = new Message("m-1", "alice", "Alice", null, "conv-1", "", SENT_AT,
+                new Photo("chat/conv-1/m-1.jpg", 1600, 1200, "https://signed", false));
+
+        MessageEntity entity = mapper.toMessageEntity(withPhoto);
+        Message read = mapper.toMessage(entity);
+
+        assertThat(entity.photo()).isEqualTo(new PhotoEntity("chat/conv-1/m-1.jpg", 1600, 1200, false));
+        assertThat(read.photo()).isEqualTo(Photo.stored("chat/conv-1/m-1.jpg", 1600, 1200));
+    }
+
+    @Test
+    void toMessage_shouldKeepARemovedPhoto_andATextMessageWithoutOne() {
+        assertThat(mapper.toMessage(new MessageEntity("m-1", "a", "A", "", SENT_AT, new PhotoEntity(null, 0, 0, true))).photo())
+                .isEqualTo(Photo.REMOVED);
+        assertThat(mapper.toMessage(messageEntity()).photo()).isNull();
+    }
+
+    @Test
+    void toConversationDetail_shouldCarryTheOrganizer() {
+        ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
+                "EVENT", "event-1", "Board games", 2L, "alice");
+
+        assertThat(mapper.toConversationDetail(entity).getOrganizerId()).isEqualTo("alice");
     }
 }

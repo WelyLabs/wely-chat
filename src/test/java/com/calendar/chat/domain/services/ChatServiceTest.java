@@ -1,5 +1,7 @@
 package com.calendar.chat.domain.services;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
@@ -74,7 +76,7 @@ class ChatServiceTest {
     }
 
     private static Message messageFrom(String senderId) {
-        return new Message(null, senderId, "Caller", "whoever-the-client-said",
+        return new Message("m-1", senderId, "Caller", "whoever-the-client-said",
                 "conv-1", "hello", Instant.parse("2026-10-12T19:00:00Z"));
     }
 
@@ -96,6 +98,24 @@ class ChatServiceTest {
         verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
         verify(messageBroadcaster, never()).broadcast(addressedTo(message, "caller"));
         verify(messageBroadcaster, never()).broadcast(message);
+    }
+
+    @Test
+    @DisplayName("a message sent without an id gets one, stored and broadcast with it")
+    void sendMessage_shouldAssignAnId_whenTheClientSentNone() {
+        Message withoutId = new Message(null, "caller", "Caller", null, "conv-1", "hello",
+                Instant.parse("2026-10-12T19:00:00Z"));
+        when(chatRepository.postMessage(any())).thenReturn(Mono.just(List.of("caller", "ines")));
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.sendMessage(withoutId))
+                .assertNext(sent -> {
+                    assertThat(sent.id()).isNotBlank();
+                    assertThat(sent.content()).isEqualTo("hello");
+                })
+                .verifyComplete();
+        verify(chatRepository).postMessage(argThat(stored -> stored.id() != null));
+        verify(messageBroadcaster).broadcast(argThat(copy -> copy.id() != null && "ines".equals(copy.receiverId())));
     }
 
     @Test
