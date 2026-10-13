@@ -1,6 +1,7 @@
 package com.calendar.chat.application.dtos;
 
 import com.calendar.chat.domain.models.BroadcastKind;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.models.Photo;
 
 import java.time.Instant;
@@ -18,5 +19,7 @@ public record LiveMessageDTO(
         String content,
         Instant timestamp,
         Photo photo,
+        /** TEXT, or SYSTEM for a notice the application posted. */
+        MessageType type,
         BroadcastKind kind
 ) {}

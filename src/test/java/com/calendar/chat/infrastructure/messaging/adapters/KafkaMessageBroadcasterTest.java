@@ -120,7 +120,7 @@ class KafkaMessageBroadcasterTest {
     @DisplayName("a record from a pod that predates updates is delivered as new")
     void accept_shouldDeliverARecordWithoutKindAsNew() {
         MessageBroadcastDTO legacy = new MessageBroadcastDTO("m-1", "sender", "Sender", "alice", "conv-1", "hi",
-                Instant.now(), null, null);
+                Instant.now(), null, null, null);
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> broadcaster.accept(legacy))

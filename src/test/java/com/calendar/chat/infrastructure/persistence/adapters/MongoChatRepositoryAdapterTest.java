@@ -32,6 +32,7 @@ import java.util.List;
 import static com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity.MAX_MESSAGES;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -54,7 +55,7 @@ class MongoChatRepositoryAdapterTest {
     private final Message message = new Message(
             null, SENDER_ID, "Sender", "receiver-1", CONVERSATION_ID, "hello", Instant.now());
     private final MessageEntity messageEntity = new MessageEntity(
-            "m-1", SENDER_ID, "Sender", "hello", Instant.now(), null);
+            "m-1", SENDER_ID, "Sender", "hello", Instant.now(), null, null);
 
     @BeforeEach
     void setUp() {
@@ -370,7 +371,7 @@ class MongoChatRepositoryAdapterTest {
 
     @Test
     void findMessage_shouldReadTheOneMessageFromItsBucket() {
-        MessageEntity entity = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null);
+        MessageEntity entity = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null, null);
         Message message = new Message("m-1", "alice", "Alice", null, null, "Podium", Instant.EPOCH);
         when(messageBucketRepository.findWithMessage("conv-1", "m-1"))
                 .thenReturn(Mono.just(new MessageBucketEntity("b-1", "conv-1", 3, List.of(entity))));
@@ -389,13 +390,83 @@ class MongoChatRepositoryAdapterTest {
     @Test
     @DisplayName("only the requested message is returned, even if the projection were to hand back more")
     void findMessage_shouldKeepOnlyTheRequestedMessage() {
-        MessageEntity other = new MessageEntity("m-0", "bob", "Bob", "hi", Instant.EPOCH, null);
-        MessageEntity wanted = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null);
+        MessageEntity other = new MessageEntity("m-0", "bob", "Bob", "hi", Instant.EPOCH, null, null);
+        MessageEntity wanted = new MessageEntity("m-1", "alice", "Alice", "Podium", Instant.EPOCH, null, null);
         Message message = new Message("m-1", "alice", "Alice", null, null, "Podium", Instant.EPOCH);
         when(messageBucketRepository.findWithMessage("conv-1", "m-1"))
                 .thenReturn(Mono.just(new MessageBucketEntity("b-1", "conv-1", 3, List.of(other, wanted))));
         when(conversationMapper.toMessage(wanted)).thenReturn(message);
 
         StepVerifier.create(adapter.findMessage("conv-1", "m-1")).expectNext(message).verifyComplete();
+    }
+
+    // --- system messages --------------------------------------------------
+
+    private static final Message NOTICE = Message.system("n-1", "Date fixée", Instant.EPOCH);
+
+    private static ConversationEntity eventGroup(List<String> memberIds) {
+        return new ConversationEntity(CONVERSATION_ID, memberIds, null, Instant.EPOCH, "EVENT", "event-1",
+                "Board games", 2L, "olivia");
+    }
+
+    @Test
+    @DisplayName("a notice is written into the event's group with no sender check, and every member returned")
+    void postSystemMessage_shouldAppendWithoutParticipantCheck() {
+        when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.just(eventGroup(List.of("olivia", "ines"))));
+        when(messageBucketRepository.existsWithMessage(CONVERSATION_ID, "n-1")).thenReturn(Mono.just(false));
+        when(conversationMapper.toMessageEntity(any())).thenReturn(messageEntity);
+        when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
+                .thenReturn(Mono.just(bucket(0)));
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(MessageBucketEntity.class)))
+                .thenReturn(Mono.just(modified(1)));
+        when(mongoTemplate.updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class)))
+                .thenReturn(Mono.just(modified(1)));
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", NOTICE))
+                .assertNext(posted -> {
+                    assertThat(posted.duplicate()).isFalse();
+                    assertThat(posted.participantIds()).containsExactly("olivia", "ines");
+                    assertThat(posted.message().conversationId()).isEqualTo(CONVERSATION_ID);
+                    assertThat(posted.message().id()).isEqualTo("n-1");
+                })
+                .verifyComplete();
+
+        verify(conversationRepository, never()).findByIdAndParticipantIdsContaining(any(), any());
+        verify(conversationMapper).toMessageEntity(argThat(stored -> CONVERSATION_ID.equals(stored.conversationId())));
+        verify(mongoTemplate).updateFirst(any(Query.class), any(Update.class), eq(ConversationEntity.class));
+    }
+
+    @Test
+    @DisplayName("a notice already in the conversation is not written twice")
+    void postSystemMessage_shouldWriteNothing_whenTheMessageIsAlreadyStored() {
+        when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.just(eventGroup(List.of("olivia"))));
+        when(messageBucketRepository.existsWithMessage(CONVERSATION_ID, "n-1")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", NOTICE))
+                .assertNext(posted -> assertThat(posted.duplicate()).isTrue())
+                .verifyComplete();
+
+        verify(mongoTemplate, never()).updateFirst(any(), any(Update.class), any(Class.class));
+        verify(mongoTemplate, never()).insert(any(MessageBucketEntity.class));
+    }
+
+    @Test
+    void postSystemMessage_shouldBeEmpty_whenTheEventHasNoGroup() {
+        when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", NOTICE)).verifyComplete();
+
+        verify(messageBucketRepository, never()).existsWithMessage(any(), any());
+        verify(mongoTemplate, never()).updateFirst(any(), any(Update.class), any(Class.class));
+    }
+
+    @Test
+    void postSystemMessage_shouldReturnNoRecipients_whenTheGroupHasNoMemberList() {
+        when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.just(eventGroup(null)));
+        when(messageBucketRepository.existsWithMessage(CONVERSATION_ID, "n-1")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", NOTICE))
+                .assertNext(posted -> assertThat(posted.participantIds()).isEmpty())
+                .verifyComplete();
     }
 }

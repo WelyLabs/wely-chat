@@ -26,7 +26,7 @@ public class ChatApplicationConfig {
     @Bean
     public ChatService chatService(ChatRepository chatRepository,
                                   MessageBroadcaster messageBroadcaster) {
-        return new ChatService(chatRepository, messageBroadcaster);
+        return new ChatService(chatRepository, messageBroadcaster, Clock.systemUTC());
     }
 
     @Bean

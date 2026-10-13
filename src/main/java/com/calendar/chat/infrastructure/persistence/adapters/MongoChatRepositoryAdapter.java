@@ -6,6 +6,7 @@ import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.infrastructure.persistence.mappers.ConversationMapper;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
@@ -135,6 +136,34 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .flatMap(conversation -> appendToLatestBucket(message.conversationId(), messageEntity)
                         .then(touchConversation(message.conversationId(), messageEntity))
                         .thenReturn(List.copyOf(conversation.getParticipantIds())));
+    }
+
+    /**
+     * Appends a notice to the event's group, unless a message with its id is already stored.
+     *
+     * <p>Check then write, not atomic: two copies of one record handled at once would both write.
+     * Records of a topic partition are handled one at a time, so only a redelivery reaches this,
+     * after the first copy is stored.
+     */
+    @Override
+    public Mono<PostedMessage> postSystemMessage(String eventId, Message message) {
+        return conversationRepository.findByEventId(eventId)
+                .flatMap(conversation -> {
+                    Message stored = new Message(message.id(), message.senderId(), message.senderName(), null,
+                            conversation.getId(), message.content(), message.timestamp(), message.photo(),
+                            message.type());
+                    List<String> participants = conversation.getParticipantIds() == null
+                            ? List.of() : List.copyOf(conversation.getParticipantIds());
+                    return messageBucketRepository.existsWithMessage(conversation.getId(), message.id())
+                            .flatMap(exists -> exists
+                                    ? Mono.just(new PostedMessage(stored, participants, true))
+                                    : Mono.defer(() -> {
+                                        MessageEntity entity = conversationMapper.toMessageEntity(stored);
+                                        return appendToLatestBucket(conversation.getId(), entity)
+                                                .then(touchConversation(conversation.getId(), entity))
+                                                .thenReturn(new PostedMessage(stored, participants, false));
+                                    }));
+                });
     }
 
     /**

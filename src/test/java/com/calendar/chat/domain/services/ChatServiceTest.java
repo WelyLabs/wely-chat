@@ -11,6 +11,8 @@ import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.MessageType;
+import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.exception.ChatErrorCode;
@@ -26,7 +28,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -46,11 +50,13 @@ class ChatServiceTest {
     @Mock
     private MessageBroadcaster messageBroadcaster;
 
+    private static final Instant NOW = Instant.parse("2026-10-14T08:00:00Z");
+
     private ChatService chatService;
 
     @BeforeEach
     void setUp() {
-        chatService = new ChatService(chatRepository, messageBroadcaster);
+        chatService = new ChatService(chatRepository, messageBroadcaster, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -314,5 +320,126 @@ class ChatServiceTest {
         StepVerifier.create(chatService.applyEventGroup(group)).verifyComplete();
 
         verify(chatRepository).saveEventGroup(group);
+    }
+
+    // --- system notices ---------------------------------------------------
+
+    private static final String NOTICE = "📅 Date fixée : jeudi 16 octobre, 19:00 – 21:00";
+
+    /** What the repository answers: the notice as stored in the event's group. */
+    private void groupStores(String eventId, boolean duplicate, String... memberIds) {
+        when(chatRepository.postSystemMessage(org.mockito.ArgumentMatchers.eq(eventId), any()))
+                .thenAnswer(call -> {
+                    Message notice = call.getArgument(1);
+                    Message stored = new Message(notice.id(), notice.senderId(), notice.senderName(), null,
+                            "conv-9", notice.content(), notice.timestamp(), null, notice.type());
+                    return Mono.just(new PostedMessage(stored, List.of(memberIds), duplicate));
+                });
+    }
+
+    @Test
+    @DisplayName("a notice is a SYSTEM message from the application, stamped by the clock")
+    void postSystemNotice_shouldPostASystemMessageSignedByTheApplication() {
+        groupStores("event-1", false, "ines");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
+                .assertNext(posted -> {
+                    assertThat(posted.type()).isEqualTo(MessageType.SYSTEM);
+                    assertThat(posted.senderId()).isEqualTo(Message.SYSTEM_SENDER_ID);
+                    assertThat(posted.senderName()).isEqualTo("Wely");
+                    assertThat(posted.content()).isEqualTo(NOTICE);
+                    assertThat(posted.timestamp()).isEqualTo(NOW);
+                    assertThat(posted.conversationId()).isEqualTo("conv-9");
+                    assertThat(posted.id()).isNotBlank();
+                })
+                .verifyComplete();
+        // Through the system path, never postMessage and its sender check.
+        verify(chatRepository, never()).postMessage(any());
+    }
+
+    @Test
+    @DisplayName("a notice reaches every member, the organizer included, marked NEW")
+    void postSystemNotice_shouldBroadcastToEveryParticipant() {
+        groupStores("event-1", false, "olivia", "ines", "hugo");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+
+        for (String member : List.of("olivia", "ines", "hugo")) {
+            verify(messageBroadcaster).broadcast(argThat(live -> member.equals(live.message().receiverId())
+                    && live.kind() == BroadcastKind.NEW && live.message().type() == MessageType.SYSTEM
+                    && "conv-9".equals(live.message().conversationId())));
+        }
+        verify(messageBroadcaster, times(3)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("the same event and text give the same id, so a redelivered record is recognised")
+    void postSystemNotice_shouldDeriveTheIdFromTheEventAndTheText() {
+        groupStores("event-1", false);
+        groupStores("event-2", false);
+
+        StepVerifier.create(Mono.zip(
+                        chatService.postSystemNotice("event-1", NOTICE).map(Message::id),
+                        chatService.postSystemNotice("event-1", NOTICE).map(Message::id),
+                        chatService.postSystemNotice("event-1", NOTICE + "!").map(Message::id),
+                        chatService.postSystemNotice("event-2", NOTICE).map(Message::id)))
+                .assertNext(ids -> {
+                    assertThat(ids.getT2()).isEqualTo(ids.getT1());
+                    assertThat(ids.getT3()).isNotEqualTo(ids.getT1());
+                    assertThat(ids.getT4()).isNotEqualTo(ids.getT1());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a notice already stored is not pushed again")
+    void postSystemNotice_shouldNotBroadcast_whenTheNoticeWasAlreadyStored() {
+        groupStores("event-1", true, "olivia", "ines");
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("no group yet is an error, so the consumer retries once it exists")
+    void postSystemNotice_shouldFail_whenTheEventHasNoGroupYet() {
+        when(chatRepository.postSystemMessage(org.mockito.ArgumentMatchers.eq("event-1"), any()))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
+                .expectErrorMatches(error -> error instanceof ChatException
+                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    void postSystemNotice_shouldPropagateAStorageError() {
+        when(chatRepository.postSystemMessage(org.mockito.ArgumentMatchers.eq("event-1"), any()))
+                .thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
+                .expectError(IllegalStateException.class)
+                .verify();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a member whose broadcast fails is skipped; the notice is stored and the others get it")
+    void postSystemNotice_shouldSurviveABroadcasterError() {
+        groupStores("event-1", false, "ines", "hugo");
+        when(messageBroadcaster.broadcast(argThat(live -> live != null && "ines".equals(live.message().receiverId()))))
+                .thenReturn(Mono.error(new IllegalStateException("broker down")));
+        when(messageBroadcaster.broadcast(argThat(live -> live != null && "hugo".equals(live.message().receiverId()))))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+
+        verify(messageBroadcaster, times(2)).broadcast(any());
     }
 }

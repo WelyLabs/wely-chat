@@ -5,6 +5,7 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
 import org.junit.jupiter.api.BeforeEach;
@@ -388,5 +389,71 @@ class MongoChatRepositoryAdapterIntegrationTest {
                 })
                 .verifyComplete();
         StepVerifier.create(adapter.findMessage(conversation.getId(), "missing")).verifyComplete();
+    }
+
+    // --- system messages --------------------------------------------------
+
+    @Test
+    @DisplayName("a notice is stored in the event's group as SYSTEM, read back as such, and listed in the preview")
+    void postSystemMessage_shouldStoreASystemMessageInTheEventGroup() {
+        adapter.saveEventGroup(GROUP).block();
+        Message notice = Message.system("notice-1", "Date fixée", Instant.parse("2026-10-14T08:00:00Z"));
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", notice))
+                .assertNext(posted -> {
+                    assertThat(posted.duplicate()).isFalse();
+                    assertThat(posted.participantIds()).containsExactly(ALICE, BOB, "carol");
+                })
+                .verifyComplete();
+
+        StepVerifier.create(adapter.findByEventId("event-1", BOB))
+                .assertNext(group -> {
+                    assertThat(group.getMessages()).hasSize(1);
+                    Message read = group.getMessages().getFirst();
+                    assertThat(read.id()).isEqualTo("notice-1");
+                    assertThat(read.type()).isEqualTo(MessageType.SYSTEM);
+                    assertThat(read.senderId()).isEqualTo(Message.SYSTEM_SENDER_ID);
+                })
+                .verifyComplete();
+        StepVerifier.create(adapter.findUserConversations(BOB))
+                .assertNext(summary -> assertThat(summary.lastMessage().type()).isEqualTo(MessageType.SYSTEM))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the same notice posted twice is stored once")
+    void postSystemMessage_shouldNotStoreTheSameNoticeTwice() {
+        adapter.saveEventGroup(GROUP).block();
+        Message notice = Message.system("notice-1", "Date fixée", Instant.now());
+        adapter.postSystemMessage("event-1", notice).block();
+
+        StepVerifier.create(adapter.postSystemMessage("event-1", notice))
+                .assertNext(posted -> assertThat(posted.duplicate()).isTrue())
+                .verifyComplete();
+        StepVerifier.create(adapter.findByEventId("event-1", ALICE))
+                .assertNext(group -> assertThat(group.getMessages()).hasSize(1))
+                .verifyComplete();
+    }
+
+    @Test
+    void postSystemMessage_shouldBeEmpty_whenTheEventHasNoGroup() {
+        StepVerifier.create(adapter.postSystemMessage("unknown", Message.system("n", "x", Instant.now())))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a text message keeps no type key in its bucket, and reads back as TEXT")
+    void postMessage_shouldStoreNoTypeForAText() {
+        ConversationDetail conversation = aConversation();
+        post(messageFrom(ALICE, conversation.getId(), "hi")).block();
+
+        org.bson.Document bucket = mongoTemplate.findOne(
+                Query.query(Criteria.where("conversationId").is(conversation.getId())), org.bson.Document.class,
+                "message_buckets").block();
+        assertThat(bucket).isNotNull();
+        assertThat(bucket.getList("messages", org.bson.Document.class).getFirst()).doesNotContainKey("ty");
+        StepVerifier.create(adapter.findById(conversation.getId(), BOB))
+                .assertNext(read -> assertThat(read.getMessages().getFirst().type()).isEqualTo(MessageType.TEXT))
+                .verifyComplete();
     }
 }

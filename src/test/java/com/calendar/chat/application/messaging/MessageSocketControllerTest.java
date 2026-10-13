@@ -9,6 +9,7 @@ import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.PresenceService;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,7 +103,7 @@ class MessageSocketControllerTest {
         when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
 
         StepVerifier.create(controller.streamMessage(jwt))
-                .expectNext(new LiveMessageDTO("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", at, null, BroadcastKind.NEW))
+                .expectNext(new LiveMessageDTO("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", at, null, MessageType.TEXT, BroadcastKind.NEW))
                 .verifyComplete();
 
         verify(chatService).streamMessages(SENDER_ID);

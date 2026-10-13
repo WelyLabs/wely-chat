@@ -5,6 +5,7 @@ import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.PostedMessage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -22,6 +23,13 @@ public interface ChatRepository {
      * sender does not take part in the target conversation.
      */
     Mono<List<String>> postMessage(Message message);
+
+    /**
+     * Appends an application notice to an event's group, with no sender check: the application
+     * takes part in no conversation. A message with the same id already there is not written
+     * again, and comes back marked duplicate. Empty if the event has no group yet.
+     */
+    Mono<PostedMessage> postSystemMessage(String eventId, Message message);
 
     Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
                                                                 Integer bucketIndex,

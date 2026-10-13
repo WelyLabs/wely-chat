@@ -23,5 +23,7 @@ public record MessageEntity(
         @Field("txt") String content,
         @Field("ts") Instant timestamp,
         /** Absent on a text message. */
-        @Field("ph") PhotoEntity photo
+        @Field("ph") PhotoEntity photo,
+        /** A MessageType name; absent on a text message, which is most of them and every older one. */
+        @Field("ty") String type
 ) {}

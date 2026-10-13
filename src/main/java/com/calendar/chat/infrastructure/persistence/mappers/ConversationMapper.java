@@ -5,12 +5,14 @@ import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.MessageBucket;
+import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
 import com.calendar.chat.infrastructure.persistence.models.dtos.PhotoEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
 
 /**
@@ -55,7 +57,14 @@ public interface ConversationMapper {
     Message toMessage(MessageEntity messageEntity);
 
     @Mapping(target = "messageId", source = "id")
+    @Mapping(target = "type", source = "type", qualifiedByName = "storedType")
     MessageEntity toMessageEntity(Message message);
+
+    /** TEXT is left out: it reads back as TEXT, and a bucket repeats the key fifty times. */
+    @Named("storedType")
+    default String storedType(MessageType type) {
+        return type == null || type == MessageType.TEXT ? null : type.name();
+    }
 
     @Mapping(target = "messages", source = "messages")
     MessageBucket toMessageBucket(MessageBucketEntity messageBucketEntity);
