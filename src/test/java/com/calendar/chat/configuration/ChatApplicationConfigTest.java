@@ -1,7 +1,6 @@
 package com.calendar.chat.configuration;
 
-import com.calendar.chat.domain.ports.PhotoNormalizer;
-import com.calendar.chat.domain.ports.PhotoStorage;
+import com.calendar.chat.domain.ports.MediaStore;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -39,7 +38,7 @@ class ChatApplicationConfigTest {
     @DisplayName("the photo service is built by hand too, from its ports")
     void photoService_shouldBuildTheDomainServiceFromItsPorts() {
         PhotoService service = config.photoService(mock(ChatRepository.class), mock(ConversationPhotoRepository.class),
-                mock(PhotoStorage.class), mock(PhotoNormalizer.class), mock(ChatService.class));
+                mock(MediaStore.class), mock(ChatService.class));
 
         assertThat(service).isNotNull();
     }

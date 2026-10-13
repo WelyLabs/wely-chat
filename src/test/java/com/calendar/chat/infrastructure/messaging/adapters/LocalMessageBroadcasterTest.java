@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
+import com.calendar.chat.domain.models.BroadcastKind;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,9 +19,9 @@ class LocalMessageBroadcasterTest {
         broadcaster = new LocalMessageBroadcaster();
     }
 
-    private static Message to(String receiverId) {
-        return new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
-                Instant.now());
+    private static LiveMessage to(String receiverId) {
+        return new LiveMessage(new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
+                Instant.now()), BroadcastKind.NEW);
     }
 
     @Test
@@ -30,8 +32,8 @@ class LocalMessageBroadcasterTest {
                     broadcaster.broadcast(to("bob")).subscribe();
                     broadcaster.broadcast(to("alice")).subscribe();
                 })
-                .assertNext(message -> {
-                    if (!"alice".equals(message.receiverId())) {
+                .assertNext(live -> {
+                    if (!"alice".equals(live.message().receiverId())) {
                         throw new AssertionError("delivered a message addressed to someone else");
                     }
                 })
@@ -44,16 +46,16 @@ class LocalMessageBroadcasterTest {
     void subscribe_shouldTolerateANullRecipient() {
         // The previous filter called receiverId().equals(userId), which throws on a message
         // whose recipient is absent and kills every subscriber's stream with it.
-        Message withoutRecipient = new Message("m-1", "sender", "Sender", null, "conv-1", "hi",
-                Instant.now());
+        LiveMessage withoutRecipient = new LiveMessage(new Message("m-1", "sender", "Sender", null, "conv-1", "hi",
+                Instant.now()), BroadcastKind.NEW);
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> {
                     broadcaster.broadcast(withoutRecipient).subscribe();
                     broadcaster.broadcast(to("alice")).subscribe();
                 })
-                .assertNext(message -> {
-                    if (!"alice".equals(message.receiverId())) {
+                .assertNext(live -> {
+                    if (!"alice".equals(live.message().receiverId())) {
                         throw new AssertionError("wrong message delivered");
                     }
                 })
@@ -77,6 +79,18 @@ class LocalMessageBroadcasterTest {
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> broadcaster.broadcast(to("alice")).subscribe())
                 .expectNextCount(1)
+                .thenCancel()
+                .verify();
+    }
+
+    @Test
+    void subscribe_shouldDeliverAnUpdateWithItsKind() {
+        LiveMessage update = new LiveMessage(new Message("m-1", "sender", "Sender", "alice", "conv-1", "",
+                Instant.now()), BroadcastKind.UPDATED);
+
+        StepVerifier.create(broadcaster.subscribe("alice"))
+                .then(() -> broadcaster.broadcast(update).subscribe())
+                .expectNext(update)
                 .thenCancel()
                 .verify();
     }

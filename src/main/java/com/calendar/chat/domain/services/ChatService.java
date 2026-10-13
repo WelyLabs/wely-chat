@@ -1,8 +1,10 @@
 package com.calendar.chat.domain.services;
 
+import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -16,6 +18,8 @@ import java.util.List;
 import java.util.UUID;
 
 public class ChatService {
+
+    private static final System.Logger LOG = System.getLogger(ChatService.class.getName());
 
     private final ChatRepository chatRepository;
     private final MessageBroadcaster messageBroadcaster;
@@ -61,12 +65,33 @@ public class ChatService {
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMapMany(Flux::fromIterable)
                 .filter(memberId -> !memberId.equals(message.senderId()))
-                .concatMap(recipientId -> messageBroadcaster.broadcast(addressedTo(message, recipientId)))
+                .concatMap(recipientId -> messageBroadcaster.broadcast(
+                        new LiveMessage(addressedTo(message, recipientId), BroadcastKind.NEW)))
                 .then(Mono.just(message));
     }
 
-    /** Stream of messages addressed to this user, from any instance. */
-    public Flux<Message> streamMessages(String userId) {
+    /**
+     * Pushes a changed message to the conversation's members but {@code exceptUserId}, who made the
+     * change and already knows. Members are read as {@code exceptUserId} sees them: nothing is sent
+     * for a conversation they are not in. A recipient whose broadcast fails is skipped: the change
+     * is already stored, and costs that member a reload.
+     */
+    public Mono<Void> broadcastUpdate(Message message, String exceptUserId) {
+        return chatRepository.findById(message.conversationId(), exceptUserId)
+                .flatMapMany(conversation -> Flux.fromIterable(conversation.getParticipantIds()))
+                .filter(memberId -> !memberId.equals(exceptUserId))
+                .concatMap(recipientId -> messageBroadcaster
+                        .broadcast(new LiveMessage(addressedTo(message, recipientId), BroadcastKind.UPDATED))
+                        .onErrorResume(error -> {
+                            LOG.log(System.Logger.Level.WARNING, "Update of message {0} not pushed to {1}: {2}",
+                                    message.id(), recipientId, error.toString());
+                            return Mono.empty();
+                        }))
+                .then();
+    }
+
+    /** Stream of messages addressed to this user, new or updated, from any instance. */
+    public Flux<LiveMessage> streamMessages(String userId) {
         return messageBroadcaster.subscribe(userId);
     }
 

@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
+import com.calendar.chat.domain.models.BroadcastKind;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import org.junit.jupiter.api.DisplayName;
@@ -85,9 +87,9 @@ class KafkaMessageBroadcasterIntegrationTest {
     @Autowired
     private MessageBroadcaster broadcaster;
 
-    private static Message to(String receiverId, String content) {
-        return new Message("m-" + receiverId, "alice", "Alice", receiverId, "conv-1", content,
-                Instant.now());
+    private static LiveMessage to(String receiverId, String content) {
+        return new LiveMessage(new Message("m-" + receiverId, "alice", "Alice", receiverId, "conv-1", content,
+                Instant.now()), BroadcastKind.NEW);
     }
 
     @Test
@@ -104,7 +106,9 @@ class KafkaMessageBroadcasterIntegrationTest {
         // is configuration that fails silently when it is wrong.
         StepVerifier.create(broadcaster.subscribe("bob"))
                 .then(() -> broadcaster.broadcast(to("bob", "hello over kafka")).subscribe())
-                .assertNext(message -> {
+                .assertNext(live -> {
+                    Message message = live.message();
+                    assertThat(live.kind()).isEqualTo(BroadcastKind.NEW);
                     assertThat(message.receiverId()).isEqualTo("bob");
                     assertThat(message.content()).isEqualTo("hello over kafka");
                     assertThat(message.senderName()).isEqualTo("Alice");
@@ -120,7 +124,7 @@ class KafkaMessageBroadcasterIntegrationTest {
         // the wire would show the message twice.
         StepVerifier.create(broadcaster.subscribe("carol"))
                 .then(() -> broadcaster.broadcast(to("carol", "keep my id")).subscribe())
-                .assertNext(message -> assertThat(message.id()).isEqualTo("m-carol"))
+                .assertNext(live -> assertThat(live.message().id()).isEqualTo("m-carol"))
                 .thenCancel()
                 .verify(Duration.ofSeconds(60));
     }
@@ -135,7 +139,19 @@ class KafkaMessageBroadcasterIntegrationTest {
                     broadcaster.broadcast(to("erin", "not for dave")).subscribe();
                     broadcaster.broadcast(to("dave", "for dave")).subscribe();
                 })
-                .assertNext(message -> assertThat(message.content()).isEqualTo("for dave"))
+                .assertNext(live -> assertThat(live.message().content()).isEqualTo("for dave"))
+                .thenCancel()
+                .verify(Duration.ofSeconds(60));
+    }
+
+    @Test
+    @DisplayName("an update comes back from the broker still marked as one")
+    void broadcast_shouldKeepTheKindThroughKafka() {
+        LiveMessage update = new LiveMessage(to("frank", "").message(), BroadcastKind.UPDATED);
+
+        StepVerifier.create(broadcaster.subscribe("frank"))
+                .then(() -> broadcaster.broadcast(update).subscribe())
+                .assertNext(live -> assertThat(live.kind()).isEqualTo(BroadcastKind.UPDATED))
                 .thenCancel()
                 .verify(Duration.ofSeconds(60));
     }

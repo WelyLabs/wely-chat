@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
+import com.calendar.chat.domain.models.BroadcastKind;
+import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.infrastructure.messaging.mappers.MessageBroadcastMapper;
 import com.calendar.chat.infrastructure.messaging.mappers.MessageBroadcastMapperImpl;
@@ -37,9 +39,9 @@ class KafkaMessageBroadcasterTest {
         broadcaster = new KafkaMessageBroadcaster(streamBridge, mapper);
     }
 
-    private static Message to(String receiverId) {
-        return new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
-                Instant.now());
+    private static LiveMessage to(String receiverId) {
+        return new LiveMessage(new Message("m-" + receiverId, "sender", "Sender", receiverId, "conv-1", "hi",
+                Instant.now()), BroadcastKind.NEW);
     }
 
     @Test
@@ -81,7 +83,7 @@ class KafkaMessageBroadcasterTest {
                     broadcaster.accept(mapper.toBroadcastDTO(to("bob")));
                     broadcaster.accept(mapper.toBroadcastDTO(to("alice")));
                 })
-                .assertNext(message -> assertThat(message.receiverId()).isEqualTo("alice"))
+                .assertNext(live -> assertThat(live.message().receiverId()).isEqualTo("alice"))
                 .thenCancel()
                 .verify();
     }
@@ -89,15 +91,40 @@ class KafkaMessageBroadcasterTest {
     @Test
     @DisplayName("a consumed record with no recipient does not kill the stream")
     void accept_shouldTolerateARecordWithoutARecipient() {
-        MessageBroadcastDTO withoutRecipient = mapper.toBroadcastDTO(
-                new Message("m-1", "sender", "Sender", null, "conv-1", "hi", Instant.now()));
+        MessageBroadcastDTO withoutRecipient = mapper.toBroadcastDTO(new LiveMessage(
+                new Message("m-1", "sender", "Sender", null, "conv-1", "hi", Instant.now()), BroadcastKind.NEW));
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> {
                     broadcaster.accept(withoutRecipient);
                     broadcaster.accept(mapper.toBroadcastDTO(to("alice")));
                 })
-                .assertNext(message -> assertThat(message.receiverId()).isEqualTo("alice"))
+                .assertNext(live -> assertThat(live.message().receiverId()).isEqualTo("alice"))
+                .thenCancel()
+                .verify();
+    }
+
+    @Test
+    @DisplayName("an update keeps its kind through the broker")
+    void accept_shouldDeliverAnUpdateAsUpdated() {
+        LiveMessage update = new LiveMessage(to("alice").message(), BroadcastKind.UPDATED);
+
+        StepVerifier.create(broadcaster.subscribe("alice"))
+                .then(() -> broadcaster.accept(mapper.toBroadcastDTO(update)))
+                .assertNext(live -> assertThat(live.kind()).isEqualTo(BroadcastKind.UPDATED))
+                .thenCancel()
+                .verify();
+    }
+
+    @Test
+    @DisplayName("a record from a pod that predates updates is delivered as new")
+    void accept_shouldDeliverARecordWithoutKindAsNew() {
+        MessageBroadcastDTO legacy = new MessageBroadcastDTO("m-1", "sender", "Sender", "alice", "conv-1", "hi",
+                Instant.now(), null, null);
+
+        StepVerifier.create(broadcaster.subscribe("alice"))
+                .then(() -> broadcaster.accept(legacy))
+                .assertNext(live -> assertThat(live.kind()).isEqualTo(BroadcastKind.NEW))
                 .thenCancel()
                 .verify();
     }

@@ -18,7 +18,9 @@ public record MessageBroadcastDTO(
         String content,
         Instant timestamp,
         /** Its storage key and size; never a URL, which each pod signs when it delivers the message. */
-        PhotoDTO photo
+        PhotoDTO photo,
+        /** NEW or UPDATED; absent from records written before updates were pushed, which are all NEW. */
+        String kind
 ) {
     public record PhotoDTO(String key, int width, int height, boolean removed) {}
 }

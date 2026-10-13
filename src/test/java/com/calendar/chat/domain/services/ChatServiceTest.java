@@ -2,9 +2,13 @@ package com.calendar.chat.domain.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
+import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
+import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
+import com.calendar.chat.domain.models.LiveMessage;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.ports.ChatRepository;
@@ -29,6 +33,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -80,9 +85,13 @@ class ChatServiceTest {
                 "conv-1", "hello", Instant.parse("2026-10-12T19:00:00Z"));
     }
 
-    private static Message addressedTo(Message message, String recipientId) {
-        return new Message(message.id(), message.senderId(), message.senderName(), recipientId,
-                message.conversationId(), message.content(), message.timestamp());
+    private static LiveMessage addressedTo(Message message, String recipientId) {
+        return addressedTo(message, recipientId, BroadcastKind.NEW);
+    }
+
+    private static LiveMessage addressedTo(Message message, String recipientId, BroadcastKind kind) {
+        return new LiveMessage(new Message(message.id(), message.senderId(), message.senderName(), recipientId,
+                message.conversationId(), message.content(), message.timestamp(), message.photo()), kind);
     }
 
     @Test
@@ -97,7 +106,7 @@ class ChatServiceTest {
         verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
         verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
         verify(messageBroadcaster, never()).broadcast(addressedTo(message, "caller"));
-        verify(messageBroadcaster, never()).broadcast(message);
+        verify(messageBroadcaster, never()).broadcast(new LiveMessage(message, BroadcastKind.NEW));
     }
 
     @Test
@@ -115,7 +124,8 @@ class ChatServiceTest {
                 })
                 .verifyComplete();
         verify(chatRepository).postMessage(argThat(stored -> stored.id() != null));
-        verify(messageBroadcaster).broadcast(argThat(copy -> copy.id() != null && "ines".equals(copy.receiverId())));
+        verify(messageBroadcaster).broadcast(argThat(copy -> copy.message().id() != null
+                && "ines".equals(copy.message().receiverId()) && copy.kind() == BroadcastKind.NEW));
     }
 
     @Test
@@ -166,8 +176,8 @@ class ChatServiceTest {
     @DisplayName("the stream is the broadcaster's, so it spans instances")
     void streamMessages_shouldDelegateToTheBroadcaster() {
         String userId = "user1";
-        Message message = new Message(UUID.randomUUID().toString(), "caller", "Caller", userId,
-                UUID.randomUUID().toString(), "hello", Instant.now());
+        LiveMessage message = new LiveMessage(new Message(UUID.randomUUID().toString(), "caller", "Caller", userId,
+                UUID.randomUUID().toString(), "hello", Instant.now()), BroadcastKind.NEW);
 
         // The service no longer owns a sink. That sink was local to one JVM, so a message
         // accepted by one pod never reached a recipient connected to another.
@@ -178,6 +188,55 @@ class ChatServiceTest {
                 .verifyComplete();
 
         verify(messageBroadcaster).subscribe(userId);
+    }
+
+    private static Message photoRemovedBy(String senderId) {
+        return new Message("m-1", senderId, "Alice", null, "conv-1", "Podium",
+                Instant.parse("2026-10-12T19:00:00Z"), Photo.REMOVED);
+    }
+
+    private void members(String requesterId, String... memberIds) {
+        when(chatRepository.findById("conv-1", requesterId)).thenReturn(Mono.just(new ConversationDetail("conv-1",
+                List.of(memberIds), ConversationType.EVENT, List.of(), 0, "Board games", "event-1")));
+    }
+
+    @Test
+    @DisplayName("an update reaches every member but the one who made it, marked UPDATED")
+    void broadcastUpdate_shouldReachEveryMemberButTheRequester() {
+        Message updated = photoRemovedBy("alice");
+        members("olivia", "olivia", "alice", "bob");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).verifyComplete();
+
+        verify(messageBroadcaster).broadcast(addressedTo(updated, "alice", BroadcastKind.UPDATED));
+        verify(messageBroadcaster).broadcast(addressedTo(updated, "bob", BroadcastKind.UPDATED));
+        verify(messageBroadcaster, never()).broadcast(addressedTo(updated, "olivia", BroadcastKind.UPDATED));
+        verify(messageBroadcaster, times(2)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a recipient whose broadcast fails is skipped; the others still get the update")
+    void broadcastUpdate_shouldSurviveABroadcasterError() {
+        Message updated = photoRemovedBy("alice");
+        members("alice", "alice", "bob", "carol");
+        when(messageBroadcaster.broadcast(addressedTo(updated, "bob", BroadcastKind.UPDATED)))
+                .thenReturn(Mono.error(new IllegalStateException("broker down")));
+        when(messageBroadcaster.broadcast(addressedTo(updated, "carol", BroadcastKind.UPDATED)))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.broadcastUpdate(updated, "alice")).verifyComplete();
+
+        verify(messageBroadcaster).broadcast(addressedTo(updated, "carol", BroadcastKind.UPDATED));
+    }
+
+    @Test
+    void broadcastUpdate_shouldSendNothing_whenTheRequesterIsNotAMember() {
+        when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "mallory")).verifyComplete();
+
+        verify(messageBroadcaster, never()).broadcast(any());
     }
 
     @Test

@@ -246,4 +246,14 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .then(conversationRepository.markLastPhotoRemoved(conversationId, messageId))
                 .then();
     }
+
+    /** Read from its bucket alone, projected to the one message; the mapper leaves the conversation id to the caller. */
+    @Override
+    public Mono<Message> findMessage(String conversationId, String messageId) {
+        return messageBucketRepository.findWithMessage(conversationId, messageId)
+                .flatMapIterable(MessageBucketEntity::getMessages)
+                .filter(message -> messageId.equals(message.messageId()))
+                .next()
+                .map(conversationMapper::toMessage);
+    }
 }
