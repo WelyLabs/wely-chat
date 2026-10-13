@@ -13,6 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.UUID;
 
 public class ChatService {
 
@@ -52,7 +53,10 @@ public class ChatService {
      * "sending" on the sender's screen. A sender outside the conversation gets an error for the
      * same reason: an empty answer would leave the message pending instead of failed.
      */
-    public Mono<Message> sendMessage(Message message) {
+    public Mono<Message> sendMessage(Message incoming) {
+        // Every message gets an id here: a photo is removed by the id of the message that carries it.
+        Message message = incoming.id() == null ? new Message(UUID.randomUUID().toString(), incoming.senderId(), incoming.senderName(),
+                incoming.receiverId(), incoming.conversationId(), incoming.content(), incoming.timestamp(), incoming.photo()) : incoming;
         return chatRepository.postMessage(message)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMapMany(Flux::fromIterable)
@@ -97,6 +101,6 @@ public class ChatService {
     /** The same message for one recipient: a group message is delivered once per member. */
     private static Message addressedTo(Message message, String recipientId) {
         return new Message(message.id(), message.senderId(), message.senderName(), recipientId,
-                message.conversationId(), message.content(), message.timestamp());
+                message.conversationId(), message.content(), message.timestamp(), message.photo());
     }
 }

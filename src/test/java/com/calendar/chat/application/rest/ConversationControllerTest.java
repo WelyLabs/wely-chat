@@ -1,5 +1,8 @@
 package com.calendar.chat.application.rest;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
@@ -33,12 +36,16 @@ class ConversationControllerTest {
 
     @Mock private ChatService chatService;
     @Mock private Jwt jwt;
+    @Mock private PhotoService photoService;
 
     private ConversationController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new ConversationController(chatService);
+        // Without photos, signing hands everything back unchanged.
+        lenient().when(photoService.signed(any(ConversationDetail.class))).thenAnswer(call -> call.getArgument(0));
+        lenient().when(photoService.signed(any(MessageBucket.class))).thenAnswer(call -> call.getArgument(0));
+        controller = new ConversationController(chatService, photoService);
     }
 
     private void givenAuthenticatedCaller() {

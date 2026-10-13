@@ -54,7 +54,7 @@ class MongoChatRepositoryAdapterTest {
     private final Message message = new Message(
             null, SENDER_ID, "Sender", "receiver-1", CONVERSATION_ID, "hello", Instant.now());
     private final MessageEntity messageEntity = new MessageEntity(
-            "m-1", SENDER_ID, "Sender", "hello", Instant.now());
+            "m-1", SENDER_ID, "Sender", "hello", Instant.now(), null);
 
     @BeforeEach
     void setUp() {
@@ -301,7 +301,7 @@ class MongoChatRepositoryAdapterTest {
     @Test
     @DisplayName("an existing older group is updated in place, nothing inserted")
     void saveEventGroup_shouldUpdateAnOlderGroup() {
-        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games", null))
                 .thenReturn(Mono.just(1L));
 
         StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyComplete();
@@ -312,7 +312,7 @@ class MongoChatRepositoryAdapterTest {
     @Test
     @DisplayName("a group seen for the first time is inserted as an EVENT conversation")
     void saveEventGroup_shouldInsertANewGroup() {
-        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games", null))
                 .thenReturn(Mono.just(0L));
         when(conversationRepository.insert(any(ConversationEntity.class)))
                 .thenAnswer(call -> Mono.just(call.getArgument(0)));
@@ -331,7 +331,7 @@ class MongoChatRepositoryAdapterTest {
     @Test
     @DisplayName("a replayed or overtaken list is ignored: the unique event id refuses the insert")
     void saveEventGroup_shouldIgnoreAStaleList() {
-        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games", null))
                 .thenReturn(Mono.just(0L));
         when(conversationRepository.insert(any(ConversationEntity.class)))
                 .thenReturn(Mono.error(new DuplicateKeyException("eventId")));
@@ -341,7 +341,7 @@ class MongoChatRepositoryAdapterTest {
 
     @Test
     void saveEventGroup_shouldFail_whenMongoFails() {
-        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games"))
+        when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games", null))
                 .thenReturn(Mono.error(new IllegalStateException("mongo down")));
 
         StepVerifier.create(adapter.saveEventGroup(GROUP)).verifyError(IllegalStateException.class);
@@ -354,5 +354,17 @@ class MongoChatRepositoryAdapterTest {
                         CONVERSATION_ID, List.of(SENDER_ID, "receiver-1"), null, Instant.now())));
         when(messageBucketRepository.findFirstByConversationIdOrderByBucketIndexDesc(CONVERSATION_ID))
                 .thenReturn(Mono.just(bucket(latestIndex)));
+    }
+
+    @Test
+    @DisplayName("removing a photo marks it in its bucket and in the conversation preview")
+    void markPhotoRemoved_shouldUpdateTheBucketAndThePreview() {
+        when(messageBucketRepository.markPhotoRemoved("conv-1", "m-1")).thenReturn(Mono.just(1L));
+        when(conversationRepository.markLastPhotoRemoved("conv-1", "m-1")).thenReturn(Mono.just(0L));
+
+        StepVerifier.create(adapter.markPhotoRemoved("conv-1", "m-1")).verifyComplete();
+
+        verify(messageBucketRepository).markPhotoRemoved("conv-1", "m-1");
+        verify(conversationRepository).markLastPhotoRemoved("conv-1", "m-1");
     }
 }

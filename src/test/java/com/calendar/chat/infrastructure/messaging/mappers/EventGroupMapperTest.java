@@ -15,9 +15,9 @@ class EventGroupMapperTest {
 
     @Test
     void toEventGroup_shouldCarryEveryField() {
-        EventGroupChangedDTO dto = new EventGroupChangedDTO("event-1", "Board games", List.of("ines", "me"), 4);
+        EventGroupChangedDTO dto = new EventGroupChangedDTO("event-1", "Board games", "ines", List.of("ines", "me"), 4);
 
-        assertThat(mapper.toEventGroup(dto)).isEqualTo(new EventGroup("event-1", "Board games", List.of("ines", "me"), 4));
+        assertThat(mapper.toEventGroup(dto)).isEqualTo(new EventGroup("event-1", "Board games", "ines", List.of("ines", "me"), 4));
     }
 
     @Test

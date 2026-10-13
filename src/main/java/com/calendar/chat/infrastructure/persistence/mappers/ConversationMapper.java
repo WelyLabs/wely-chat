@@ -3,8 +3,10 @@ package com.calendar.chat.infrastructure.persistence.mappers;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
+import com.calendar.chat.infrastructure.persistence.models.dtos.PhotoEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
 import org.mapstruct.Mapper;
@@ -29,6 +31,7 @@ public interface ConversationMapper {
 
     @Mapping(target = "participantIds", ignore = true)
     @Mapping(target = "groupVersion", ignore = true)
+    @Mapping(target = "organizerId", ignore = true)
     ConversationEntity toConversationEntity(ConversationSummary conversationSummary);
 
     // A conversation stored before groups existed has no type: it is a private one.
@@ -56,4 +59,11 @@ public interface ConversationMapper {
 
     @Mapping(target = "messages", source = "messages")
     MessageBucket toMessageBucket(MessageBucketEntity messageBucketEntity);
+
+    /** The URL is signed when a message is read, never stored. */
+    @Mapping(target = "url", ignore = true)
+    @Mapping(target = "key", source = "key")
+    Photo toPhoto(PhotoEntity photoEntity);
+
+    PhotoEntity toPhotoEntity(Photo photo);
 }

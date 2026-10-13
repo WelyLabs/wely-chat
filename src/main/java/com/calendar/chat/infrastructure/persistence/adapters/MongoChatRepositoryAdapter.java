@@ -229,12 +229,21 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     @Override
     public Mono<Void> saveEventGroup(EventGroup group) {
         return conversationRepository
-                .updateEventGroup(group.eventId(), group.version(), group.memberIds(), group.title())
+                .updateEventGroup(group.eventId(), group.version(), group.memberIds(), group.title(), group.organizerId())
                 .filter(updated -> updated == 0)
                 .flatMap(none -> conversationRepository.insert(new ConversationEntity(
                         null, group.memberIds(), null, Instant.now(),
-                        ConversationType.EVENT.name(), group.eventId(), group.title(), group.version())))
+                        ConversationType.EVENT.name(), group.eventId(), group.title(), group.version(),
+                        group.organizerId())))
                 .onErrorResume(DuplicateKeyException.class, stale -> Mono.empty())
+                .then();
+    }
+
+    /** In the bucket that holds the message, and in the conversation's preview if it is the last one. */
+    @Override
+    public Mono<Void> markPhotoRemoved(String conversationId, String messageId) {
+        return messageBucketRepository.markPhotoRemoved(conversationId, messageId)
+                .then(conversationRepository.markLastPhotoRemoved(conversationId, messageId))
                 .then();
     }
 }

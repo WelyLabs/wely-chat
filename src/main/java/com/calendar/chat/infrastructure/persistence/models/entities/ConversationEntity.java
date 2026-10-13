@@ -38,10 +38,12 @@ public class ConversationEntity {
 
     /** The version of the member list last applied, from wely-events. */
     private Long groupVersion;
+    /** An event group's organizer, who may remove its photos; absent on groups announced before it was named. */
+    private String organizerId;
 
     /** A private conversation between these participants. A factory, so MapStruct sees one constructor. */
     public static ConversationEntity direct(String id, List<String> participantIds, MessageEntity lastMessage,
                                             Instant updatedAt) {
-        return new ConversationEntity(id, participantIds, lastMessage, updatedAt, null, null, null, null);
+        return new ConversationEntity(id, participantIds, lastMessage, updatedAt, null, null, null, null, null);
     }
 }

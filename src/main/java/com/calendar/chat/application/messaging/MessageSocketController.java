@@ -3,6 +3,7 @@ package com.calendar.chat.application.messaging;
 import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.services.PresenceService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,10 +19,12 @@ public class MessageSocketController {
 
     private final ChatService chatService;
     private final PresenceService presenceService;
+    private final PhotoService photoService;
 
-    public MessageSocketController(ChatService chatService, PresenceService presenceService) {
+    public MessageSocketController(ChatService chatService, PresenceService presenceService, PhotoService photoService) {
         this.chatService = chatService;
         this.presenceService = presenceService;
+        this.photoService = photoService;
     }
 
     /** Answers with the stored message, which the client takes as delivered. */
@@ -39,6 +42,7 @@ public class MessageSocketController {
         String userId = jwt.getClaimAsString("businessId");
 
         // The user counts as online for as long as this stream is open.
-        return presenceService.track(userId, chatService.streamMessages(userId));
+        // A photo's URL is signed here, by the pod that delivers it: it never travels on the broker.
+        return presenceService.track(userId, chatService.streamMessages(userId).map(photoService::signed));
     }
 }

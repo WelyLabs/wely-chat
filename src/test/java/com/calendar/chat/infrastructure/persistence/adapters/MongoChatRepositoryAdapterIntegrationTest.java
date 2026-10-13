@@ -1,5 +1,6 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.EventGroup;
@@ -340,6 +341,31 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(summary.eventId()).isEqualTo("event-1");
                     assertThat(summary.title()).isEqualTo("Board games");
                 })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a removed photo loses its key in its bucket and in the preview, and the message keeps its place")
+    void markPhotoRemoved_shouldMarkTheMessageInPlace() {
+        ConversationDetail conversation = aConversation();
+        post(messageFrom(ALICE, conversation.getId(), "before")).block();
+        Message photo = new Message("photo-1", ALICE, "Alice", null, conversation.getId(), "le podium",
+                Instant.now(), Photo.stored("chat/" + conversation.getId() + "/photo-1.jpg", 1600, 1200));
+        post(photo).block();
+
+        adapter.markPhotoRemoved(conversation.getId(), "photo-1").block();
+
+        StepVerifier.create(adapter.findById(conversation.getId(), BOB))
+                .assertNext(read -> {
+                    assertThat(read.getMessages()).hasSize(2);
+                    Message marked = read.getMessages().get(1);
+                    assertThat(marked.id()).isEqualTo("photo-1");
+                    assertThat(marked.content()).isEqualTo("le podium");
+                    assertThat(marked.photo()).isEqualTo(Photo.REMOVED);
+                })
+                .verifyComplete();
+        StepVerifier.create(adapter.findUserConversations(BOB))
+                .assertNext(summary -> assertThat(summary.lastMessage().photo()).isEqualTo(Photo.REMOVED))
                 .verifyComplete();
     }
 }

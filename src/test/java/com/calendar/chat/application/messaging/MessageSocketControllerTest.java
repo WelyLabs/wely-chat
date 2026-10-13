@@ -1,5 +1,7 @@
 package com.calendar.chat.application.messaging;
 
+import static org.mockito.Mockito.lenient;
+import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
@@ -33,12 +35,15 @@ class MessageSocketControllerTest {
     @Mock private ChatService chatService;
     @Mock private PresenceService presenceService;
     @Mock private Jwt jwt;
+    @Mock private PhotoService photoService;
 
     private MessageSocketController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new MessageSocketController(chatService, presenceService);
+        // Text messages carry no photo: signing hands them back unchanged.
+        lenient().when(photoService.signed(any(Message.class))).thenAnswer(call -> call.getArgument(0));
+        controller = new MessageSocketController(chatService, presenceService, photoService);
     }
 
     @Test
@@ -101,10 +106,11 @@ class MessageSocketControllerTest {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         Flux<Message> stream = Flux.empty();
         when(chatService.streamMessages(SENDER_ID)).thenReturn(stream);
-        when(presenceService.track(SENDER_ID, stream)).thenReturn(Flux.empty());
+        // The stream is wrapped to sign photo URLs on the way out: what reaches track is that wrapper.
+        when(presenceService.track(eq(SENDER_ID), any())).thenReturn(Flux.empty());
 
         StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
 
-        verify(presenceService).track(SENDER_ID, stream);
+        verify(presenceService).track(eq(SENDER_ID), any());
     }
 }
