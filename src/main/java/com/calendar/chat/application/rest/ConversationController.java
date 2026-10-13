@@ -35,7 +35,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readOrCreateConversation(List.of(userId, friendId))
-                .map(photoService::signed)
+                .flatMap(photoService::signed)
                 .map(ResponseEntity::ok);
     }
 
@@ -47,7 +47,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readPreviousMessages(conversationId, bucketIndex, userId)
-                .map(photoService::signed)
+                .flatMap(photoService::signed)
                 .map(ResponseEntity::ok)
                 // An empty 404 tells a client nothing: an RFC 7807 response carries a
                 // stable code it can branch on.
@@ -61,7 +61,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readConversationById(conversationId, userId)
-                .map(photoService::signed)
+                .flatMap(photoService::signed)
                 .map(ResponseEntity::ok)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }
@@ -74,7 +74,7 @@ public class ConversationController {
         String userId = jwt.getClaimAsString("businessId");
 
         return chatService.readEventConversation(eventId, userId)
-                .map(photoService::signed)
+                .flatMap(photoService::signed)
                 .map(ResponseEntity::ok)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }

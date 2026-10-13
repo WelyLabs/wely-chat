@@ -5,12 +5,12 @@ import com.calendar.chat.domain.models.ConversationPhoto;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
-import com.calendar.chat.domain.models.NormalizedPhoto;
+import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.Photo;
+import com.calendar.chat.domain.models.StoredMedia;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
-import com.calendar.chat.domain.ports.PhotoNormalizer;
-import com.calendar.chat.domain.ports.PhotoStorage;
+import com.calendar.chat.domain.ports.MediaStore;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +27,11 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,12 +49,10 @@ class PhotoServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-10-13T20:00:00Z");
     private static final byte[] UPLOAD = {1, 2, 3};
-    private static final NormalizedPhoto NORMALIZED = new NormalizedPhoto(new byte[] {9}, "image/jpeg", 1600, 1200);
 
     @Mock private ChatRepository chatRepository;
     @Mock private ConversationPhotoRepository photoRepository;
-    @Mock private PhotoStorage storage;
-    @Mock private PhotoNormalizer normalizer;
+    @Mock private MediaStore mediaStore;
     @Mock private ChatService chatService;
 
     private PhotoService service;
@@ -66,9 +69,20 @@ class PhotoServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PhotoService(chatRepository, photoRepository, storage, normalizer, chatService,
+        service = new PhotoService(chatRepository, photoRepository, mediaStore, chatService,
                 Clock.fixed(NOW, ZoneOffset.UTC));
-        lenient().when(storage.signedUrl(anyString(), any())).thenAnswer(call -> "https://media/" + call.getArgument(0));
+        lenient().when(mediaStore.urls(any())).thenAnswer(call -> Mono.just(signedUrls(call.getArgument(0))));
+    }
+
+    private static Map<String, String> signedUrls(Collection<String> keys) {
+        // Null while a test re-stubs the call.
+        return keys == null ? Map.of() : keys.stream().collect(Collectors.toMap(key -> key, key -> "https://media/" + key));
+    }
+
+    /** wely-media keeps the key it was given and reports the prepared size. */
+    private void storesAs(int width, int height) {
+        when(mediaStore.store(anyString(), eq(UPLOAD), eq(MediaProfile.PHOTO)))
+                .thenAnswer(call -> Mono.just(new StoredMedia(call.getArgument(0), width, height)));
     }
 
     private void member(ConversationDetail conversation, String userId) {
@@ -83,8 +97,7 @@ class PhotoServiceTest {
     @DisplayName("a photo is stored, then sent as a message, then listed, and comes back with a signed URL")
     void send_shouldStoreThenSendThenList() {
         member(eventGroup, "alice");
-        when(normalizer.normalize(UPLOAD)).thenReturn(Mono.just(NORMALIZED));
-        when(storage.put(anyString(), eq(NORMALIZED.content()), eq("image/jpeg"))).thenReturn(Mono.empty());
+        storesAs(1600, 1200);
         when(chatService.sendMessage(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
         when(photoRepository.save(any())).thenReturn(Mono.empty());
 
@@ -114,31 +127,28 @@ class PhotoServiceTest {
                 .expectErrorMatches(error -> error instanceof ChatException chat
                         && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
-        verify(normalizer, never()).normalize(any());
-        verify(storage, never()).put(any(), any(), any());
+        verify(mediaStore, never()).store(any(), any(), any());
     }
 
     @Test
     @DisplayName("if the message cannot be written, the stored file is removed again")
     void send_shouldRemoveTheFile_whenTheMessageFails() {
         member(eventGroup, "alice");
-        when(normalizer.normalize(UPLOAD)).thenReturn(Mono.just(NORMALIZED));
-        when(storage.put(anyString(), any(), any())).thenReturn(Mono.empty());
+        storesAs(1600, 1200);
         when(chatService.sendMessage(any())).thenReturn(Mono.error(new IllegalStateException("mongo down")));
-        when(storage.delete(anyString())).thenReturn(Mono.empty());
+        when(mediaStore.delete(anyString())).thenReturn(Mono.empty());
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectError(IllegalStateException.class)
                 .verify();
-        verify(storage).delete(startsWith("chat/c1/"));
+        verify(mediaStore).delete(startsWith("chat/c1/"));
         verify(photoRepository, never()).save(any());
     }
 
     @Test
     void send_shouldStillSend_whenTheMediaTabEntryFails() {
         member(eventGroup, "alice");
-        when(normalizer.normalize(UPLOAD)).thenReturn(Mono.just(NORMALIZED));
-        when(storage.put(anyString(), any(), any())).thenReturn(Mono.empty());
+        storesAs(1600, 1200);
         when(chatService.sendMessage(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
         when(photoRepository.save(any())).thenReturn(Mono.error(new IllegalStateException("index down")));
 
@@ -146,15 +156,15 @@ class PhotoServiceTest {
     }
 
     @Test
-    void send_shouldNotStoreAnything_whenThePhotoIsRefused() {
+    void send_shouldNotSendTheMessage_whenThePhotoIsRefused() {
         member(eventGroup, "alice");
-        when(normalizer.normalize(UPLOAD)).thenReturn(Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID)));
+        when(mediaStore.store(anyString(), any(), any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID)));
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof ChatException chat
                         && chat.getErrorCode() == ChatErrorCode.PHOTO_INVALID)
                 .verify();
-        verify(storage, never()).put(any(), any(), any());
+        verify(chatService, never()).sendMessage(any());
     }
 
     @Test
@@ -193,13 +203,13 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
         when(chatRepository.markPhotoRemoved("c1", "m1")).thenReturn(Mono.empty());
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
-        when(storage.delete("chat/c1/m1.jpg")).thenReturn(Mono.empty());
+        when(mediaStore.delete("chat/c1/m1.jpg")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
 
         verify(chatRepository).markPhotoRemoved("c1", "m1");
         verify(photoRepository).delete("c1", "m1");
-        verify(storage).delete("chat/c1/m1.jpg");
+        verify(mediaStore).delete("chat/c1/m1.jpg");
     }
 
     @Test
@@ -208,7 +218,7 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
         when(chatRepository.markPhotoRemoved("c1", "m1")).thenReturn(Mono.empty());
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
-        when(storage.delete(anyString())).thenReturn(Mono.empty());
+        when(mediaStore.delete(anyString())).thenReturn(Mono.empty());
 
         StepVerifier.create(service.remove("c1", "m1", "olivia")).verifyComplete();
     }
@@ -223,7 +233,7 @@ class PhotoServiceTest {
                         && chat.getErrorCode() == ChatErrorCode.PHOTO_REMOVAL_DENIED)
                 .verify();
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
-        verify(storage, never()).delete(any());
+        verify(mediaStore, never()).delete(any());
     }
 
     @Test
@@ -255,9 +265,50 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
         when(chatRepository.markPhotoRemoved("c1", "m1")).thenReturn(Mono.empty());
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
-        when(storage.delete(anyString())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+        when(mediaStore.delete(anyString())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
 
         StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+    }
+
+    @Test
+    void send_shouldReturnTheMessageWithoutUrl_whenSigningFails() {
+        member(eventGroup, "alice");
+        storesAs(1600, 1200);
+        when(chatService.sendMessage(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
+        when(photoRepository.save(any())).thenReturn(Mono.empty());
+        when(mediaStore.urls(any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+
+        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
+                .assertNext(sent -> {
+                    assertThat(sent.photo().key()).startsWith("chat/c1/");
+                    assertThat(sent.photo().url()).isNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void page_shouldSignTheWholePageInOneCall() {
+        member(eventGroup, "bob");
+        ConversationPhoto other = new ConversationPhoto("c1", "m2", "bob", Photo.stored("chat/c1/m2.jpg", 10, 10), NOW);
+        when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("alice"), other));
+
+        StepVerifier.create(service.page("c1", "bob", null, 30)).expectNextCount(2).verifyComplete();
+
+        verify(mediaStore, times(1)).urls(List.of("chat/c1/m1.jpg", "chat/c1/m2.jpg"));
+    }
+
+    @Test
+    void page_shouldListPhotosWithoutUrl_whenSigningFails() {
+        member(eventGroup, "bob");
+        when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("alice")));
+        when(mediaStore.urls(any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+
+        StepVerifier.create(service.page("c1", "bob", null, 30))
+                .assertNext(photo -> {
+                    assertThat(photo.photo().key()).isEqualTo("chat/c1/m1.jpg");
+                    assertThat(photo.photo().url()).isNull();
+                })
+                .verifyComplete();
     }
 
     @Test
@@ -266,21 +317,99 @@ class PhotoServiceTest {
         Message removed = new Message("m2", "alice", "Alice", null, "c1", "", NOW, Photo.REMOVED);
         Message stored = new Message("m1", "alice", "Alice", null, "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
 
-        assertThat(service.signed(text)).isSameAs(text);
-        assertThat(service.signed(removed)).isSameAs(removed);
-        assertThat(service.signed(stored).photo().url()).isEqualTo("https://media/chat/c1/m1.jpg");
+        StepVerifier.create(service.signed(text)).expectNext(text).verifyComplete();
+        StepVerifier.create(service.signed(removed)).expectNext(removed).verifyComplete();
+        StepVerifier.create(service.signed(stored))
+                .assertNext(signed -> assertThat(signed.photo().url()).isEqualTo("https://media/chat/c1/m1.jpg"))
+                .verifyComplete();
+        // Nothing to sign, nothing asked of wely-media.
+        verify(mediaStore, times(1)).urls(any());
     }
 
     @Test
-    void signed_shouldSignEveryMessageOfABucketAndOfAConversation() {
+    void signed_shouldReturnTheMessageWithoutUrl_whenSigningFails() {
+        Message stored = new Message("m1", "alice", "Alice", null, "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
+        when(mediaStore.urls(any())).thenReturn(Mono.error(new IllegalStateException("media down")));
+
+        StepVerifier.create(service.signed(stored))
+                .assertNext(signed -> {
+                    assertThat(signed.photo().key()).isEqualTo("chat/c1/m1.jpg");
+                    assertThat(signed.photo().url()).isNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void signed_shouldSignABucketInOneCall() {
+        Message first = new Message("m1", "alice", "Alice", null, "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
+        Message second = new Message("m2", "bob", "Bob", null, "c1", "", NOW, Photo.stored("chat/c1/m2.jpg", 10, 10));
+        Message text = new Message("m3", "bob", "Bob", null, "c1", "hi", NOW);
+
+        StepVerifier.create(service.signed(new MessageBucket("c1", 0, List.of(first, second, text))))
+                .assertNext(bucket -> {
+                    assertThat(bucket.conversationId()).isEqualTo("c1");
+                    assertThat(bucket.messages()).extracting(message -> message.photo() == null ? null : message.photo().url())
+                            .containsExactly("https://media/chat/c1/m1.jpg", "https://media/chat/c1/m2.jpg", null);
+                })
+                .verifyComplete();
+        verify(mediaStore, times(1)).urls(List.of("chat/c1/m1.jpg", "chat/c1/m2.jpg"));
+    }
+
+    @Test
+    void signed_shouldLeaveABucketWithoutMessagesAlone() {
+        MessageBucket empty = new MessageBucket("c1", 0, null);
+
+        StepVerifier.create(service.signed(empty)).expectNext(empty).verifyComplete();
+        verify(mediaStore, never()).urls(any());
+    }
+
+    @Test
+    void signed_shouldSignEveryMessageOfAConversation() {
         Message stored = new Message("m1", "alice", "Alice", null, "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
         ConversationDetail conversation = group(ConversationType.EVENT);
         conversation.setMessages(List.of(stored));
 
-        assertThat(service.signed(new MessageBucket("c1", 0, List.of(stored))).messages().getFirst().photo().url())
-                .isEqualTo("https://media/chat/c1/m1.jpg");
-        assertThat(service.signed(conversation).getMessages().getFirst().photo().url())
-                .isEqualTo("https://media/chat/c1/m1.jpg");
+        StepVerifier.create(service.signed(conversation))
+                .assertNext(signed -> assertThat(signed.getMessages().getFirst().photo().url())
+                        .isEqualTo("https://media/chat/c1/m1.jpg"))
+                .verifyComplete();
     }
 
+    @Test
+    @DisplayName("more than 200 photos are signed in calls of 200 keys at most")
+    void signed_shouldChunkTheKeys_whenMoreThanTheMediaServiceAcceptsPerCall() {
+        List<Message> messages = IntStream.range(0, 450)
+                .mapToObj(i -> new Message("m" + i, "alice", "Alice", null, "c1", "", NOW,
+                        Photo.stored("chat/c1/m" + i + ".jpg", 10, 10)))
+                .toList();
+        ConversationDetail conversation = group(ConversationType.EVENT);
+        conversation.setMessages(messages);
+
+        StepVerifier.create(service.signed(conversation))
+                .assertNext(signed -> assertThat(signed.getMessages()).allMatch(message -> message.photo().url() != null))
+                .verifyComplete();
+
+        ArgumentCaptor<Collection<String>> calls = ArgumentCaptor.captor();
+        verify(mediaStore, times(3)).urls(calls.capture());
+        assertThat(calls.getAllValues()).extracting(Collection::size).containsExactly(200, 200, 50);
+    }
+
+    @Test
+    @DisplayName("a chunk that fails costs its own URLs only")
+    void signed_shouldKeepTheOtherChunksUrls_whenOneChunkFails() {
+        List<Message> messages = IntStream.range(0, 250)
+                .mapToObj(i -> new Message("m" + i, "alice", "Alice", null, "c1", "", NOW,
+                        Photo.stored("chat/c1/m" + i + ".jpg", 10, 10)))
+                .toList();
+        when(mediaStore.urls(any()))
+                .thenAnswer(call -> Mono.just(signedUrls(call.getArgument(0))))
+                .thenReturn(Mono.error(new IllegalStateException("media down")));
+
+        StepVerifier.create(service.signed(new MessageBucket("c1", 0, messages)))
+                .assertNext(bucket -> {
+                    assertThat(bucket.messages().subList(0, 200)).allMatch(message -> message.photo().url() != null);
+                    assertThat(bucket.messages().subList(200, 250)).allMatch(message -> message.photo().url() == null);
+                })
+                .verifyComplete();
+    }
 }

@@ -43,8 +43,8 @@ class ConversationControllerTest {
     @BeforeEach
     void setUp() {
         // Without photos, signing hands everything back unchanged.
-        lenient().when(photoService.signed(any(ConversationDetail.class))).thenAnswer(call -> call.getArgument(0));
-        lenient().when(photoService.signed(any(MessageBucket.class))).thenAnswer(call -> call.getArgument(0));
+        lenient().when(photoService.signed(any(ConversationDetail.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
+        lenient().when(photoService.signed(any(MessageBucket.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
         controller = new ConversationController(chatService, photoService);
     }
 

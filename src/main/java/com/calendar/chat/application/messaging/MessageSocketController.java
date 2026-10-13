@@ -43,6 +43,6 @@ public class MessageSocketController {
 
         // The user counts as online for as long as this stream is open.
         // A photo's URL is signed here, by the pod that delivers it: it never travels on the broker.
-        return presenceService.track(userId, chatService.streamMessages(userId).map(photoService::signed));
+        return presenceService.track(userId, chatService.streamMessages(userId).concatMap(photoService::signed));
     }
 }

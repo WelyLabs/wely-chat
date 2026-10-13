@@ -42,7 +42,7 @@ class MessageSocketControllerTest {
     @BeforeEach
     void setUp() {
         // Text messages carry no photo: signing hands them back unchanged.
-        lenient().when(photoService.signed(any(Message.class))).thenAnswer(call -> call.getArgument(0));
+        lenient().when(photoService.signed(any(Message.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
         controller = new MessageSocketController(chatService, presenceService, photoService);
     }
 

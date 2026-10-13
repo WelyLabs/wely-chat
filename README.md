@@ -225,8 +225,9 @@ public record ConversationSummary(String id, ConversationType type, String title
 
 Comme dans une messagerie : une photo s'envoie dans la conversation, s'affiche dans le fil et se retrouve dans un onglet Médias.
 
-- **Stockées dans Garage**, bucket `wely-chat-media`, sous `chat/<conversation>/<message>.jpg`. Le message garde la **clé** et la taille, jamais une URL : chaque lecture (historique, conversation, flux RSocket) la signe pour **1 h**, et c'est le pod qui livre le message qui signe — la clé seule passe par Kafka.
-- **Normalisées à l'envoi** (ImageIO) : décodage = vérification du type, 8000 px par côté et 40 mégapixels au plus, côté le plus long ramené à 1600 px, proportions gardées, réencodage JPEG — les EXIF, dont la position GPS, disparaissent. L'orientation EXIF est appliquée par l'application web, qui redessine la photo sur un canvas avant l'envoi. 10 Mo au plus.
+- **Confiées à wely-media**, sous la clé `chat/<conversation>/<message>.jpg` (préfixe `chat/`, le seul que wely-media accepte de ce service). Le chat n'accède jamais au bucket : il appelle l'API interne de wely-media (`/internal/media`, en-tête `X-Internal-Secret`) via `MediaApiAdapter`, derrière le port `MediaStore`.
+- **Préparées par wely-media** (profil `PHOTO`) : vérification du type, côté le plus long ramené à 1600 px, réencodage JPEG, métadonnées (dont la position GPS) retirées. L'orientation EXIF est appliquée par l'application web, qui redessine la photo sur un canvas avant l'envoi. 10 Mo au plus, refusés par le chat avant tout appel. Image refusée → `CHT-BUS-004`, trop lourde → `CHT-BUS-005`, toute autre erreur de wely-media → `CHT-TEC-001`.
+- **URL signées à la lecture** : le message garde la **clé** et la taille, jamais une URL. Chaque réponse (bucket d'historique, détail de conversation, page de l'onglet Médias, message du flux RSocket) demande ses URL en **un seul appel** `POST /internal/media/urls` (par lots de 200 clés), valables **1 h**. C'est le pod qui livre le message qui signe — la clé seule passe par Kafka. Si wely-media ne répond pas, la réponse part quand même, photos sans `url`, et un avertissement est journalisé.
 - **Ordre des écritures** : le fichier d'abord, puis le message ; si le message échoue, le fichier est supprimé. L'entrée de l'onglet Médias vient en dernier et ne fait pas échouer l'envoi.
 - **Qui voit** : les membres **actuels** de la conversation. Rejoindre le groupe d'un événement donne accès aux photos d'avant ; le quitter retire l'accès.
 - **Qui retire** : l'auteur, et dans le groupe d'un événement son organisateur — nommé par `EVENT_GROUP_CHANGED` (`organizerId`), ou à défaut le premier membre, là où wely-events l'a toujours placé. Le message reste, marqué « photo retirée », pour que le fil garde sa forme ; le fichier part en dernier (un échec laisse un fichier orphelin, pas un message cassé).
@@ -244,7 +245,7 @@ Comme dans une messagerie : une photo s'envoie dans la conversation, s'affiche d
 | `CHT-BUS-005` | 413 | Photo de plus de 10 Mo |
 | `CHT-BUS-006` | 404 | Pas de photo pour ce message dans cette conversation |
 | `CHT-BUS-007` | 403 | Ni l'auteur de la photo, ni l'organisateur de l'événement |
-| `CHT-TEC-001` | 502 | Stockage des photos injoignable |
+| `CHT-TEC-001` | 502 | wely-media injoignable ou en erreur |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `CHT-TEC-000` | 500 | Erreur inattendue |
@@ -284,6 +285,8 @@ client peut tester et un `timestamp` :
 | `CHAT_BROADCAST_TOPIC` | Topic de diffusion, `MESSAGE_BROADCAST` par défaut |
 | `KAFKA_BOOTSTRAP_SERVER` | Broker, en mode `kafka` uniquement |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL/PLAIN |
+| `MEDIA_API_URL` | URL de wely-media (`http://localhost:8085` en profil `dev`) |
+| `MEDIA_API_SECRET` | Secret partagé avec wely-media, envoyé dans `X-Internal-Secret`. Vide par défaut : le service démarre, l'envoi de photos répond `CHT-TEC-001` |
 | `HOSTNAME` | Nom du pod, fourni par Kubernetes ; sert à nommer le groupe de consommation |
 
 ---
