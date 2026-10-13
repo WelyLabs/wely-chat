@@ -48,6 +48,6 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
 
     /** The preview of a conversation whose last message is the one whose photo was removed. */
     @Query("{ '_id': ?0, 'lastMessage.m_id': ?1 }")
-    @Update("{ '$set': { 'lastMessage.ph.rm': true }, '$unset': { 'lastMessage.ph.k': '' } }")
+    @Update("{ '$set': { 'lastMessage.ph.rm': true }, '$unset': { 'lastMessage.ph.k': '', 'lastMessage.ph.w': '', 'lastMessage.ph.h': '' } }")
     Mono<Long> markLastPhotoRemoved(String conversationId, String messageId);
 }
