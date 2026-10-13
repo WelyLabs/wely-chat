@@ -7,6 +7,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
+import java.nio.charset.StandardCharsets;
 
 import java.time.Instant;
 import java.util.function.Consumer;
@@ -14,17 +18,21 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class MessageBroadcastConsumerTest {
 
+    private static final ObjectMapper JSON = JsonMapper.builder().build();
+
     private KafkaMessageBroadcaster broadcaster;
-    private Consumer<Flux<Message<MessageBroadcastDTO>>> consumer;
+    private Consumer<Flux<Message<byte[]>>> consumer;
 
     @BeforeEach
     void setUp() {
         broadcaster = mock(KafkaMessageBroadcaster.class);
-        consumer = new MessageBroadcastConsumer(broadcaster).messageBroadcast();
+        consumer = new MessageBroadcastConsumer(broadcaster, JSON).messageBroadcast();
     }
 
     /** Fixed, so the same id always yields an equal payload and Mockito can match it. */
@@ -34,8 +42,12 @@ class MessageBroadcastConsumerTest {
         return new MessageBroadcastDTO(id, "sender", "Sender", "alice", "conv-1", "hi", SENT_AT);
     }
 
-    private static Message<MessageBroadcastDTO> record(String id) {
-        return MessageBuilder.withPayload(payload(id)).build();
+    private static Message<byte[]> record(String id) {
+        return MessageBuilder.withPayload(JSON.writeValueAsBytes(payload(id))).build();
+    }
+
+    private static Message<byte[]> raw(String json) {
+        return MessageBuilder.withPayload(json.getBytes(StandardCharsets.UTF_8)).build();
     }
 
     @Test
@@ -57,6 +69,20 @@ class MessageBroadcastConsumerTest {
         consumer.accept(Flux.just(record("m-1"), record("m-2")));
 
         verify(broadcaster).accept(payload("m-2"));
+    }
+
+    @Test
+    @DisplayName("an unreadable record is dropped and the stream goes on: no pod goes deaf over one record")
+    void messageBroadcast_shouldSkipARecordItCannotRead() {
+        // The record that took every pod down after the switch to instants: a time without a zone.
+        String oldFormat = "{\"id\":\"m-0\",\"senderId\":\"sender\",\"senderName\":\"Sender\","
+                + "\"receiverId\":\"alice\",\"conversationId\":\"conv-1\",\"content\":\"hi\","
+                + "\"timestamp\":\"2026-10-12T23:44:46\"}";
+
+        consumer.accept(Flux.just(raw(oldFormat), raw("not json"), record("m-1")));
+
+        verify(broadcaster).accept(payload("m-1"));
+        verify(broadcaster, times(1)).accept(any());
     }
 
     @Test

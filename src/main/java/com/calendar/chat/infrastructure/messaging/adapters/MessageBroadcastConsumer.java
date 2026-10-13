@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.Message;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.function.Consumer;
 
@@ -28,6 +29,11 @@ import java.util.function.Consumer;
  * goes straight past it to a {@code subscribe()} with no error handler, where Reactor rethrows
  * it as {@code ErrorCallbackNotImplemented} onto whichever thread happened to signal it.
  * A test of exactly that case is what surfaced this.
+ *
+ * <p>Which is also why records arrive as bytes and are read here, one at a time. Converted by the
+ * binder, a record it could not read failed the whole stream: when message times became instants,
+ * every pod met a record in the old zone-less format and went deaf until restarted. Read inside
+ * {@code dispatch}, an unreadable record is one more dropped record.
  */
 @Slf4j
 @Configuration
@@ -35,13 +41,15 @@ import java.util.function.Consumer;
 public class MessageBroadcastConsumer {
 
     private final KafkaMessageBroadcaster broadcaster;
+    private final ObjectMapper objectMapper;
 
-    public MessageBroadcastConsumer(KafkaMessageBroadcaster broadcaster) {
+    public MessageBroadcastConsumer(KafkaMessageBroadcaster broadcaster, ObjectMapper objectMapper) {
         this.broadcaster = broadcaster;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
-    public Consumer<Flux<Message<MessageBroadcastDTO>>> messageBroadcast() {
+    public Consumer<Flux<Message<byte[]>>> messageBroadcast() {
         return flux -> flux
                 .concatMap(this::dispatch)
                 .subscribe(
@@ -50,13 +58,12 @@ public class MessageBroadcastConsumer {
                                 + "stop receiving live messages until it restarts", error));
     }
 
-    private Mono<Void> dispatch(Message<MessageBroadcastDTO> record) {
-        MessageBroadcastDTO payload = record.getPayload();
-
-        return Mono.<Void>fromRunnable(() -> broadcaster.accept(payload))
+    private Mono<Void> dispatch(Message<byte[]> record) {
+        return Mono.<Void>fromRunnable(() -> broadcaster.accept(
+                        objectMapper.readValue(record.getPayload(), MessageBroadcastDTO.class)))
                 .onErrorResume(error -> {
-                    log.error("Dropped one broadcast record for {}: {}",
-                            payload.receiverId(), error.getMessage(), error);
+                    // The payload is not logged: it is someone's private message.
+                    log.error("Dropped one broadcast record: {}", error.getMessage());
                     return Mono.empty();
                 });
     }
