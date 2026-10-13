@@ -49,7 +49,7 @@ class ChatApplicationTest {
      * reach a broker is only that {@code messageBroadcast} — the function named in
      * {@code spring.cloud.function.definition} — is a conditional bean that does not exist at
      * {@code chat.broadcast.mode=local}. Make that consumer unconditional and every test here
-     * starts dialling Confluent Cloud.
+     * starts dialling a broker that is not there.
      */
     @Test
     void contextShouldSelectTheInProcessBroadcasterWithoutABroker() {
