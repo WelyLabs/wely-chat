@@ -16,6 +16,6 @@ public interface MessageBucketRepository extends ReactiveMongoRepository<Message
 
     /** The message keeps its place; its photo loses its key and says it was removed. */
     @Query("{ 'conversationId': ?0, 'messages.m_id': ?1 }")
-    @Update("{ '$set': { 'messages.$.ph.rm': true }, '$unset': { 'messages.$.ph.k': '' } }")
+    @Update("{ '$set': { 'messages.$.ph.rm': true }, '$unset': { 'messages.$.ph.k': '', 'messages.$.ph.w': '', 'messages.$.ph.h': '' } }")
     Mono<Long> markPhotoRemoved(String conversationId, String messageId);
 }
