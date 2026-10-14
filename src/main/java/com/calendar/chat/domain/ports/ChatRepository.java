@@ -31,6 +31,9 @@ public interface ChatRepository {
      */
     Mono<PostedMessage> postSystemMessage(String eventId, Message message);
 
+    /** Like {@link #postSystemMessage}, into any conversation by its id. Empty if it does not exist. */
+    Mono<PostedMessage> postSystemMessageToConversation(String conversationId, Message message);
+
     Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
                                                                 Integer bucketIndex,
                                                                 String requesterId);

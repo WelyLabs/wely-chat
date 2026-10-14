@@ -3,7 +3,13 @@ package com.calendar.chat.configuration;
 import com.calendar.chat.domain.ports.MediaStore;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.services.PhotoService;
+import com.calendar.chat.domain.ports.CallBroadcaster;
+import com.calendar.chat.domain.ports.CallNoticeFormatter;
+import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.IceServerProvider;
+import com.calendar.chat.domain.ports.MediaRelay;
+import com.calendar.chat.domain.services.CallService;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.PresenceService;
@@ -53,6 +59,20 @@ class ChatApplicationConfigTest {
 
         assertThat(service).isNotNull();
         verifyNoInteractions(presence, chats);
+    }
+
+    @Test
+    @DisplayName("the call service is built by hand too, from its ports")
+    void callService_shouldBuildTheDomainServiceFromItsPorts() {
+        CallRepository calls = mock(CallRepository.class);
+        MediaRelay relay = mock(MediaRelay.class);
+
+        CallService service = config.callService(calls, mock(ChatRepository.class), relay,
+                mock(IceServerProvider.class), mock(CallBroadcaster.class), mock(ChatService.class),
+                mock(CallNoticeFormatter.class), 12);
+
+        assertThat(service).isNotNull();
+        verifyNoInteractions(calls, relay);
     }
 
     @Test

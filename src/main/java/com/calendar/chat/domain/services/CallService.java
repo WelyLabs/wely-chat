@@ -14,6 +14,7 @@ import com.calendar.chat.domain.models.RemoteTrack;
 import com.calendar.chat.domain.models.SessionDescription;
 import com.calendar.chat.domain.models.TrackRequest;
 import com.calendar.chat.domain.ports.CallBroadcaster;
+import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
@@ -24,9 +25,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -41,22 +43,35 @@ public class CallService {
 
     private static final System.Logger LOG = System.getLogger(CallService.class.getName());
 
+    /** How often a browser in a call sends a heartbeat. */
+    public static final Duration HEARTBEAT = Duration.ofSeconds(15);
+    /** Three missed heartbeats: the browser crashed, lost its network or was closed. */
+    static final Duration SILENCE_TIMEOUT = HEARTBEAT.multipliedBy(3);
+    /** Nobody answered in time. */
+    static final Duration RING_TIMEOUT = Duration.ofSeconds(30);
+    /** A guard on the relay's free allowance: a call forgotten open does not run all night. */
+    static final Duration MAX_DURATION = Duration.ofHours(3);
+
     private final CallRepository callRepository;
     private final ChatRepository chatRepository;
     private final MediaRelay mediaRelay;
     private final IceServerProvider iceServerProvider;
     private final CallBroadcaster callBroadcaster;
+    private final ChatService chatService;
+    private final CallNoticeFormatter noticeFormatter;
     private final int maxParticipants;
     private final Clock clock;
 
     public CallService(CallRepository callRepository, ChatRepository chatRepository, MediaRelay mediaRelay,
-                       IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster,
-                       int maxParticipants, Clock clock) {
+                       IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster, ChatService chatService,
+                       CallNoticeFormatter noticeFormatter, int maxParticipants, Clock clock) {
         this.callRepository = callRepository;
         this.chatRepository = chatRepository;
         this.mediaRelay = mediaRelay;
         this.iceServerProvider = iceServerProvider;
         this.callBroadcaster = callBroadcaster;
+        this.chatService = chatService;
+        this.noticeFormatter = noticeFormatter;
         this.maxParticipants = maxParticipants;
         this.clock = clock;
     }
@@ -75,6 +90,13 @@ public class CallService {
                                 .flatMap(call -> startedBy(call, userId)
                                         ? notify(call, CallEventType.RINGING, userId, call.memberIdsExcept(userId))
                                         : Mono.just(call)))));
+    }
+
+    /** The live call of a conversation the caller belongs to; empty when there is none. */
+    public Mono<Call> liveCall(String userId, String conversationId) {
+        return chatRepository.findById(conversationId, userId)
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .flatMap(conversation -> callRepository.findLive(conversationId));
     }
 
     /**
@@ -193,10 +215,43 @@ public class CallService {
         return callBroadcaster.subscribe(userId);
     }
 
-    /** Ends a live call and tells every member; does nothing if it had already ended. */
+    /**
+     * Cleans up what nobody closed, run periodically by every instance: unanswered calls stop
+     * ringing, silent participants are taken out, and calls past {@link #MAX_DURATION} end. Each
+     * step is safe to run twice at once: the writes are conditional, so only one instance acts.
+     */
+    public Mono<Void> expire() {
+        Instant now = clock.instant();
+        Mono<Void> unanswered = callRepository.findRingingStartedBefore(now.minus(RING_TIMEOUT))
+                .concatMap(call -> end(call, CallStatus.MISSED, call.startedBy()))
+                .then();
+        Mono<Void> silent = callRepository.findLiveWithParticipantSeenBefore(now.minus(SILENCE_TIMEOUT))
+                .concatMap(call -> Flux.fromIterable(call.participants())
+                        .filter(participant -> participant.lastSeenAt().isBefore(now.minus(SILENCE_TIMEOUT)))
+                        .concatMap(participant -> leave(participant.userId(), call.id())))
+                .then();
+        Mono<Void> overdue = callRepository.findLiveStartedBefore(now.minus(MAX_DURATION))
+                .concatMap(call -> end(call, CallStatus.ENDED, call.startedBy()))
+                .then();
+        return unanswered.then(silent).then(overdue);
+    }
+
+    /**
+     * Ends a live call, tells every member and leaves a line in the conversation. Does nothing
+     * if it had already ended, so a call ends once even when two instances race to end it.
+     */
     Mono<Call> end(Call call, CallStatus status, String actorId) {
         return callRepository.end(call.id(), status, clock.instant())
-                .flatMap(ended -> notify(ended, CallEventType.ENDED, actorId, ended.memberIds()));
+                .flatMap(ended -> notify(ended, CallEventType.ENDED, actorId, ended.memberIds()))
+                .flatMap(ended -> chatService
+                        .postConversationNotice(ended.conversationId(), "call:" + ended.id(),
+                                noticeFormatter.format(ended))
+                        .onErrorResume(error -> {
+                            LOG.log(System.Logger.Level.WARNING, "No notice for call {0}: {1}",
+                                    ended.id(), error.toString());
+                            return Mono.empty();
+                        })
+                        .thenReturn(ended));
     }
 
     private Mono<Call> liveCallOfMember(String userId, String callId) {

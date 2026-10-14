@@ -148,22 +148,30 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
     @Override
     public Mono<PostedMessage> postSystemMessage(String eventId, Message message) {
         return conversationRepository.findByEventId(eventId)
-                .flatMap(conversation -> {
-                    Message stored = new Message(message.id(), message.senderId(), message.senderName(), null,
-                            conversation.getId(), message.content(), message.timestamp(), message.photo(),
-                            message.type());
-                    List<String> participants = conversation.getParticipantIds() == null
-                            ? List.of() : List.copyOf(conversation.getParticipantIds());
-                    return messageBucketRepository.existsWithMessage(conversation.getId(), message.id())
-                            .flatMap(exists -> exists
-                                    ? Mono.just(new PostedMessage(stored, participants, true))
-                                    : Mono.defer(() -> {
-                                        MessageEntity entity = conversationMapper.toMessageEntity(stored);
-                                        return appendToLatestBucket(conversation.getId(), entity)
-                                                .then(touchConversation(conversation.getId(), entity))
-                                                .thenReturn(new PostedMessage(stored, participants, false));
-                                    }));
-                });
+                .flatMap(conversation -> postInto(conversation, message));
+    }
+
+    @Override
+    public Mono<PostedMessage> postSystemMessageToConversation(String conversationId, Message message) {
+        return conversationRepository.findById(conversationId)
+                .flatMap(conversation -> postInto(conversation, message));
+    }
+
+    /** Stores an application notice once, keyed by its id; no sender check. */
+    private Mono<PostedMessage> postInto(ConversationEntity conversation, Message message) {
+        Message stored = new Message(message.id(), message.senderId(), message.senderName(), null,
+                conversation.getId(), message.content(), message.timestamp(), message.photo(), message.type());
+        List<String> participants = conversation.getParticipantIds() == null
+                ? List.of() : List.copyOf(conversation.getParticipantIds());
+        return messageBucketRepository.existsWithMessage(conversation.getId(), message.id())
+                .flatMap(exists -> exists
+                        ? Mono.just(new PostedMessage(stored, participants, true))
+                        : Mono.defer(() -> {
+                            MessageEntity entity = conversationMapper.toMessageEntity(stored);
+                            return appendToLatestBucket(conversation.getId(), entity)
+                                    .then(touchConversation(conversation.getId(), entity))
+                                    .thenReturn(new PostedMessage(stored, participants, false));
+                        }));
     }
 
     /**

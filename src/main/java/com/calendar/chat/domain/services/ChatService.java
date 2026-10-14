@@ -114,6 +114,19 @@ public class ChatService {
                         : pushToMembers(posted).thenReturn(posted.message()));
     }
 
+    /**
+     * Posts an application notice in any conversation, such as a call's summary. {@code noticeKey}
+     * makes it idempotent: the same key posts once.
+     */
+    public Mono<Message> postConversationNotice(String conversationId, String noticeKey, String content) {
+        Message notice = Message.system(noticeId(conversationId, noticeKey), content, clock.instant());
+        return chatRepository.postSystemMessageToConversation(conversationId, notice)
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .flatMap(posted -> posted.duplicate()
+                        ? Mono.just(posted.message())
+                        : pushToMembers(posted).thenReturn(posted.message()));
+    }
+
     private Mono<Void> pushToMembers(PostedMessage posted) {
         return Flux.fromIterable(posted.participantIds())
                 .concatMap(recipientId -> messageBroadcaster

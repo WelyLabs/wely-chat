@@ -19,6 +19,8 @@ import com.calendar.chat.domain.models.SessionDescription;
 import com.calendar.chat.domain.models.TrackRequest;
 import com.calendar.chat.domain.models.VideoLayer;
 import com.calendar.chat.domain.ports.CallBroadcaster;
+import com.calendar.chat.domain.ports.CallNoticeFormatter;
+import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
@@ -71,14 +73,21 @@ class CallServiceTest {
     private IceServerProvider iceServerProvider;
     @Mock
     private CallBroadcaster callBroadcaster;
+    @Mock
+    private ChatService chatService;
+    @Mock
+    private CallNoticeFormatter noticeFormatter;
 
     private CallService service;
 
     @BeforeEach
     void setUp() {
         service = new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
-                MAX_PARTICIPANTS, Clock.fixed(NOW, ZoneOffset.UTC));
+                chatService, noticeFormatter, MAX_PARTICIPANTS, Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(callBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+        lenient().when(noticeFormatter.format(any())).thenReturn("📞 Call");
+        lenient().when(chatService.postConversationNotice(anyString(), anyString(), anyString()))
+                .thenReturn(Mono.just(Message.system("notice", "📞 Call", NOW)));
     }
 
     private static ConversationDetail conversation(String... members) {
@@ -157,6 +166,28 @@ class CallServiceTest {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.start("mallory", "conv-1", CallMedia.AUDIO))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.CONVERSATION_NOT_FOUND));
+
+        verifyNoInteractions(callRepository);
+    }
+
+    // --- liveCall ------------------------------------------------------------------------
+
+    @Test
+    void liveCall_shouldGiveTheConversationsLiveCall_toAMember() {
+        memberOfConversation("bob");
+        Call live = call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"));
+        when(callRepository.findLive("conv-1")).thenReturn(Mono.just(live));
+
+        StepVerifier.create(service.liveCall("bob", "conv-1")).expectNext(live).verifyComplete();
+    }
+
+    @Test
+    void liveCall_shouldRefuse_someoneOutsideTheConversation() {
+        when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.liveCall("mallory", "conv-1"))
                 .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
                         .isEqualTo(ChatErrorCode.CONVERSATION_NOT_FOUND));
 
@@ -565,5 +596,93 @@ class CallServiceTest {
         StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO)).expectNext(created).verifyComplete();
 
         assertThat(broadcastEvents(2)).extracting(CallEvent::recipientId).containsExactly("bob", "carol");
+    }
+
+    // --- end, notices --------------------------------------------------------------------
+
+    @Test
+    void end_shouldLeaveTheCallsSummaryInTheConversation_onceAndKeyedByTheCall() {
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"))));
+        Call ended = call(CallStatus.ENDED, List.of("alice", "bob"));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW)).thenReturn(Mono.just(ended));
+        when(noticeFormatter.format(ended)).thenReturn("📞 Appel vidéo · 12 min");
+
+        StepVerifier.create(service.leave("bob", "call-1")).verifyComplete();
+
+        verify(chatService).postConversationNotice("conv-1", "call:call-1", "📞 Appel vidéo · 12 min");
+    }
+
+    @Test
+    void end_shouldStillEndTheCall_whenTheNoticeCannotBePosted() {
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"))));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+        when(chatService.postConversationNotice(anyString(), anyString(), anyString()))
+                .thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        StepVerifier.create(service.leave("bob", "call-1")).verifyComplete();
+
+        verify(callBroadcaster, times(2)).broadcast(any());
+    }
+
+    @Test
+    void end_shouldPostNothing_whenAnotherInstanceAlreadyEndedTheCall() {
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"))));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.leave("bob", "call-1")).verifyComplete();
+
+        verifyNoInteractions(chatService, callBroadcaster);
+    }
+
+    // --- expire --------------------------------------------------------------------------
+
+    @Test
+    void expire_shouldMarkUnansweredCallsMissed() {
+        Call ringing = call(CallStatus.RINGING, List.of("alice", "bob"), in("alice"));
+        when(callRepository.findRingingStartedBefore(NOW.minus(CallService.RING_TIMEOUT))).thenReturn(Flux.just(ringing));
+        when(callRepository.findLiveWithParticipantSeenBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.findLiveStartedBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.end("call-1", CallStatus.MISSED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.MISSED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.expire()).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.MISSED, NOW);
+    }
+
+    @Test
+    void expire_shouldTakeOutOnlyTheParticipantsWhoWentSilent() {
+        Instant silentSince = NOW.minus(CallService.SILENCE_TIMEOUT);
+        CallParticipant silent = new CallParticipant("bob", "s-bob", NOW, silentSince.minusSeconds(1), List.of());
+        CallParticipant alive = new CallParticipant("carol", "s-carol", NOW, NOW, List.of());
+        Call call = call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), silent, alive);
+        when(callRepository.findRingingStartedBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.findLiveWithParticipantSeenBefore(silentSince)).thenReturn(Flux.just(call));
+        when(callRepository.findLiveStartedBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), alive)));
+
+        StepVerifier.create(service.expire()).verifyComplete();
+
+        verify(callRepository).removeParticipant("call-1", "bob");
+        verify(callRepository, never()).removeParticipant("call-1", "carol");
+    }
+
+    @Test
+    void expire_shouldEndCallsPastTheMaximumDuration() {
+        Call longCall = call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob"));
+        when(callRepository.findRingingStartedBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.findLiveWithParticipantSeenBefore(any())).thenReturn(Flux.empty());
+        when(callRepository.findLiveStartedBefore(NOW.minus(CallService.MAX_DURATION))).thenReturn(Flux.just(longCall));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.expire()).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
     }
 }

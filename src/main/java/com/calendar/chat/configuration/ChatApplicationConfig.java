@@ -1,5 +1,11 @@
 package com.calendar.chat.configuration;
 
+import com.calendar.chat.domain.ports.CallBroadcaster;
+import com.calendar.chat.domain.ports.CallNoticeFormatter;
+import com.calendar.chat.domain.ports.CallRepository;
+import com.calendar.chat.domain.ports.IceServerProvider;
+import com.calendar.chat.domain.ports.MediaRelay;
+import com.calendar.chat.domain.services.CallService;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
@@ -40,5 +46,14 @@ public class ChatApplicationConfig {
     public PresenceService presenceService(PresenceRepository presenceRepository, ChatRepository chatRepository,
                                           @Value("${chat.broadcast.instance-id}") String instanceId) {
         return new PresenceService(presenceRepository, chatRepository, instanceId, Clock.systemUTC());
+    }
+
+    @Bean
+    public CallService callService(CallRepository callRepository, ChatRepository chatRepository, MediaRelay mediaRelay,
+                                   IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster,
+                                   ChatService chatService, CallNoticeFormatter noticeFormatter,
+                                   @Value("${app.calls.max-participants}") int maxParticipants) {
+        return new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
+                chatService, noticeFormatter, maxParticipants, Clock.systemUTC());
     }
 }

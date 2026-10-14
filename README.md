@@ -192,6 +192,7 @@ la topologie réseau qui la protège, pas un drapeau.
 |---|---|---|
 | `chat.send` | `request/response` | Envoie un message. L'expéditeur est lu dans le JWT, jamais dans le payload |
 | `chat.stream` | `request/stream` | Flux des messages destinés à l'utilisateur courant, nouveaux (`kind: "NEW"`) ou modifiés (`kind: "UPDATED"`) |
+| `call.events` | `request/stream` | Événements d'appel destinés à l'utilisateur : `RINGING`, `PARTICIPANT_JOINED`, `PARTICIPANT_LEFT`, `TRACKS_PUBLISHED`, `DECLINED`, `ENDED` |
 
 Le JWT est transmis dans la métadonnée d'authentification RSocket et validé par Spring Security RSocket.
 
@@ -209,6 +210,14 @@ Préfixées par `/chat-service`, exposées sur `/api/v1/chat-service/**`.
 | `GET` | `/conversations/{id}/photos?before=&limit=` | L'onglet Médias : les photos de la conversation, les plus récentes d'abord, 30 par page (60 au plus) |
 | `DELETE` | `/conversations/{id}/photos/{messageId}` | Retire une photo (204) : son auteur, ou l'organisateur dans le groupe d'un événement |
 | `GET` | `/presence/{userId}` | En ligne ou pas, et vu pour la dernière fois quand — seulement pour quelqu'un avec qui on a une conversation |
+| `POST` | `/calls` | Lance un appel (`{conversationId, media: AUDIO\|VIDEO}`) et fait sonner les autres membres, ou rend l'appel déjà en cours |
+| `GET` | `/calls/live?conversationId=` | L'appel en cours de la conversation, 204 s'il n'y en a pas |
+| `POST` | `/calls/{id}/join` | Entre dans l'appel : serveurs ICE (STUN, TURN éphémère) |
+| `POST` | `/calls/{id}/publish` | Publie micro et caméra : l'offer SDP du navigateur contre l'answer du SFU |
+| `POST` | `/calls/{id}/subscribe` | Reçoit les pistes d'autres participants, nommées par personne |
+| `PUT` | `/calls/{id}/renegotiate` | L'answer du navigateur quand le SFU a renégocié |
+| `PUT` | `/calls/{id}/layers` | Change la couche simulcast d'une caméra reçue |
+| `POST` | `/calls/{id}/unsubscribe` · `/heartbeat` · `/leave` · `/decline` | Ferme des pistes reçues · signe de vie toutes les 15 s · quitte · refuse |
 
 ### Modèles
 
@@ -241,6 +250,20 @@ Comme dans une messagerie : une photo s'envoie dans la conversation, s'affiche d
 - **Onglet Médias** : une collection à part, `conversation_photos` (`{conversationId, sentAt}`, unicité sur `{conversationId, messageId}`), pour paginer sans dérouler les buckets de 50 messages.
 - **Identifiants de message** : attribués par le serveur (UUID) à chaque envoi — une photo se retire par l'identifiant du message qui la porte.
 
+## Appels audio et vidéo
+
+Un appel appartient à une conversation, directe ou le groupe d'un événement : on appelle un ami, ou tous les participants d'une sortie (12 au plus).
+
+- **Le média ne passe jamais par ici.** Chaque navigateur ouvre **une** connexion WebRTC vers le SFU de **Cloudflare Realtime**, y publie son micro et sa caméra, et y reçoit les pistes des autres. Un SFU fait suivre les flux sans les réencoder : chacun n'envoie qu'un flux, quel que soit le nombre de participants — là où un maillage pair-à-pair ferait envoyer `n-1` flux à chaque téléphone.
+- **Ce service fait le reste** : il vérifie l'appartenance, fait sonner les membres, tient l'état de l'appel dans MongoDB (collection `calls`) et relaie la négociation WebRTC (offer/answer SDP) vers l'API Cloudflare avec un secret que le navigateur ne voit jamais.
+- **Le client ne nomme jamais une session Cloudflare.** Publier se fait sur *sa* session, retrouvée dans l'appel stocké à partir du JWT ; recevoir une piste n'est permis que si un participant de *cet* appel la publie (`CHT-BUS-010` sinon). Les identifiants de session ne sortent pas du service.
+- **Un seul appel vivant par conversation**, garanti par un index unique partiel (`conversationId` où `live: true`) : deux membres qui appellent à la même seconde se retrouvent dans le même appel, et un seul fait sonner les autres. La dernière place est prise par une écriture conditionnelle (`$expr` sur la taille de la liste), jamais par une lecture suivie d'une écriture.
+- **États** : `RINGING` → `ACTIVE` (un deuxième participant entre) → `ENDED` (le dernier sort). `MISSED` si personne ne répond en 30 s ou si l'appelant raccroche avant ; `DECLINED` si l'autre refuse un appel direct. Dans un groupe, un refus prévient seulement ceux qui sont dans l'appel.
+- **Nettoyage** (`CallReaper`, toutes les 10 s, sur chaque pod) : sonnerie expirée, participant sans *heartbeat* depuis 45 s (onglet fermé, réseau perdu), appel de plus de 3 h — garde-fou sur le quota gratuit de Cloudflare (1 000 Go sortants par mois). Les écritures conditionnelles font qu'un seul pod agit sur chaque appel.
+- **Historique** : la fin d'un appel laisse une ligne système dans la conversation (« 📞 Appel vidéo · 12 min », « 📞 Appel audio manqué »), une seule fois grâce à un identifiant dérivé de l'appel.
+- **Diffusion** : les événements suivent le même chemin que les messages (`CallBroadcaster`, local ou Kafka, topic `CALL_EVENTS`).
+- **TURN** : identifiants éphémères (4 h) demandés à Cloudflare à chaque entrée dans un appel ; sans clé, ou si Cloudflare échoue, STUN seul.
+
 ## Gestion des erreurs
 
 | Code | HTTP | Signification |
@@ -252,7 +275,11 @@ Comme dans une messagerie : une photo s'envoie dans la conversation, s'affiche d
 | `CHT-BUS-005` | 413 | Photo de plus de 10 Mo |
 | `CHT-BUS-006` | 404 | Pas de photo pour ce message dans cette conversation |
 | `CHT-BUS-007` | 403 | Ni l'auteur de la photo, ni l'organisateur de l'événement |
+| `CHT-BUS-008` | 404 | Appel introuvable, terminé, **ou** dont l'appelant n'est pas membre |
+| `CHT-BUS-009` | 409 | Appel complet (12 participants) |
+| `CHT-BUS-010` | 403 | Piste qui n'est pas publiée dans cet appel |
 | `CHT-TEC-001` | 502 | wely-media injoignable ou en erreur |
+| `CHT-TEC-002` | 502 | Cloudflare Realtime injoignable, en erreur ou non configuré |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `CHT-TEC-000` | 500 | Erreur inattendue |
@@ -295,6 +322,9 @@ client peut tester et un `timestamp` :
 | `MEDIA_API_URL` | URL de wely-media (`http://localhost:8085` en profil `dev`) |
 | `MEDIA_API_SECRET` | Secret partagé avec wely-media, envoyé dans `X-Internal-Secret`. Vide par défaut : le service démarre, l'envoi de photos répond `CHT-TEC-001` |
 | `HOSTNAME` | Nom du pod, fourni par Kubernetes ; sert à nommer le groupe de consommation |
+| `CHAT_CALL_TOPIC` | Topic des événements d'appel, `CALL_EVENTS` par défaut |
+| `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET` | Application Realtime SFU. Vides par défaut : le service démarre, les appels répondent `CHT-TEC-002` |
+| `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` | Clé TURN. Vides : STUN seul, ce qui suffit sur la plupart des réseaux |
 
 ---
 

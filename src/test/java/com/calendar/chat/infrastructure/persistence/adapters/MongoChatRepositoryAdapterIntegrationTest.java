@@ -436,6 +436,20 @@ class MongoChatRepositoryAdapterIntegrationTest {
     }
 
     @Test
+    @DisplayName("a call's notice lands in a direct conversation too")
+    void postSystemMessageToConversation_shouldStoreTheNoticeInADirectConversation() {
+        ConversationDetail direct = adapter.saveWithInitialBucket(List.of(ALICE, BOB)).block();
+        Message notice = Message.system("call-notice", "📞 Appel audio · 3 min", Instant.parse("2026-10-15T18:00:00Z"));
+
+        StepVerifier.create(adapter.postSystemMessageToConversation(direct.getId(), notice))
+                .assertNext(posted -> assertThat(posted.participantIds()).containsExactlyInAnyOrder(ALICE, BOB))
+                .verifyComplete();
+        StepVerifier.create(adapter.postSystemMessageToConversation(direct.getId(), notice))
+                .assertNext(posted -> assertThat(posted.duplicate()).isTrue())
+                .verifyComplete();
+    }
+
+    @Test
     void postSystemMessage_shouldBeEmpty_whenTheEventHasNoGroup() {
         StepVerifier.create(adapter.postSystemMessage("unknown", Message.system("n", "x", Instant.now())))
                 .verifyComplete();

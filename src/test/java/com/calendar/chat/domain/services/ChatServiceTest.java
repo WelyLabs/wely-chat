@@ -359,6 +359,49 @@ class ChatServiceTest {
     }
 
     @Test
+    @DisplayName("a notice goes into any conversation by its id, and reaches its members")
+    void postConversationNotice_shouldPostIntoTheConversation_andPushToItsMembers() {
+        when(chatRepository.postSystemMessageToConversation(org.mockito.ArgumentMatchers.eq("conv-3"), any()))
+                .thenAnswer(call -> {
+                    Message notice = call.getArgument(1);
+                    return Mono.just(new PostedMessage(notice, List.of("alice", "bob"), false));
+                });
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postConversationNotice("conv-3", "call:c1", "📞 Appel audio manqué"))
+                .assertNext(posted -> {
+                    assertThat(posted.type()).isEqualTo(MessageType.SYSTEM);
+                    assertThat(posted.content()).isEqualTo("📞 Appel audio manqué");
+                })
+                .verifyComplete();
+
+        verify(messageBroadcaster, times(2)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("the same key posts once: a notice already there is not pushed again")
+    void postConversationNotice_shouldPushNothing_forADuplicate() {
+        when(chatRepository.postSystemMessageToConversation(org.mockito.ArgumentMatchers.eq("conv-3"), any()))
+                .thenAnswer(call -> Mono.just(new PostedMessage(call.getArgument(1), List.of("alice"), true)));
+
+        StepVerifier.create(chatService.postConversationNotice("conv-3", "call:c1", "x")).expectNextCount(1)
+                .verifyComplete();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    void postConversationNotice_shouldFail_whenTheConversationDoesNotExist() {
+        when(chatRepository.postSystemMessageToConversation(org.mockito.ArgumentMatchers.eq("gone"), any()))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postConversationNotice("gone", "call:c1", "x"))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
+    }
+
+    @Test
     @DisplayName("a notice reaches every member, the organizer included, marked NEW")
     void postSystemNotice_shouldBroadcastToEveryParticipant() {
         groupStores("event-1", false, "olivia", "ines", "hugo");

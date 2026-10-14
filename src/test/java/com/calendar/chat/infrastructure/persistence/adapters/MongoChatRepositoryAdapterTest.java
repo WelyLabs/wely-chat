@@ -437,6 +437,24 @@ class MongoChatRepositoryAdapterTest {
     }
 
     @Test
+    @DisplayName("a notice can go into any conversation by its id, a direct one included")
+    void postSystemMessageToConversation_shouldAppendIntoTheConversation() {
+        when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Mono.just(eventGroup(List.of("olivia", "ines"))));
+        when(messageBucketRepository.existsWithMessage(CONVERSATION_ID, "n-1")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(adapter.postSystemMessageToConversation(CONVERSATION_ID, NOTICE))
+                .assertNext(posted -> assertThat(posted.participantIds()).containsExactly("olivia", "ines"))
+                .verifyComplete();
+    }
+
+    @Test
+    void postSystemMessageToConversation_shouldBeEmpty_whenTheConversationDoesNotExist() {
+        when(conversationRepository.findById("gone")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.postSystemMessageToConversation("gone", NOTICE)).verifyComplete();
+    }
+
+    @Test
     @DisplayName("a notice already in the conversation is not written twice")
     void postSystemMessage_shouldWriteNothing_whenTheMessageIsAlreadyStored() {
         when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.just(eventGroup(List.of("olivia"))));

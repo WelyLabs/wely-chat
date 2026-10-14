@@ -3,6 +3,7 @@ package com.calendar.chat.domain.ports;
 import com.calendar.chat.domain.models.Call;
 import com.calendar.chat.domain.models.CallParticipant;
 import com.calendar.chat.domain.models.CallStatus;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -46,4 +47,13 @@ public interface CallRepository {
 
     /** Ends a live call with a final status; empty when it had already ended. */
     Mono<Call> end(String callId, CallStatus status, Instant at);
+
+    /** Calls still ringing that started before {@code startedBefore}. */
+    Flux<Call> findRingingStartedBefore(Instant startedBefore);
+
+    /** Live calls with at least one participant last seen before {@code seenBefore}. */
+    Flux<Call> findLiveWithParticipantSeenBefore(Instant seenBefore);
+
+    /** Live calls that started before {@code startedBefore}. */
+    Flux<Call> findLiveStartedBefore(Instant startedBefore);
 }
