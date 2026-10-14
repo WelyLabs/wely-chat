@@ -62,4 +62,48 @@ class DateFixedNoticeFormatterTest {
         assertThat(paris.format(start, start)).isEqualTo("📅 Date fixée : jeudi 15 octobre, 19:00");
         assertThat(paris.format(start, start.minusSeconds(60))).isEqualTo("📅 Date fixée : jeudi 15 octobre, 19:00");
     }
+
+    @Test
+    @DisplayName("a move within the day gives the new hours, then the previous ones")
+    void formatMove_shouldGiveThePreviousHoursAlone_whenTheDayStaysTheSame() {
+        String notice = paris.formatMove(Instant.parse("2026-10-15T18:00:00Z"), Instant.parse("2026-10-15T20:00:00Z"),
+                Instant.parse("2026-10-15T17:00:00Z"), Instant.parse("2026-10-15T19:00:00Z"));
+
+        assertThat(notice).isEqualTo("🔁 Sortie décalée : jeudi 15 octobre, 20:00 – 22:00 (au lieu de 19:00 – 21:00)");
+    }
+
+    @Test
+    @DisplayName("a move to another day gives the previous day too")
+    void formatMove_shouldGiveThePreviousDate_whenTheDayChanges() {
+        String notice = paris.formatMove(Instant.parse("2026-10-16T17:00:00Z"), Instant.parse("2026-10-16T19:00:00Z"),
+                Instant.parse("2026-10-15T17:00:00Z"), Instant.parse("2026-10-15T19:00:00Z"));
+
+        assertThat(notice).isEqualTo("🔁 Sortie décalée : vendredi 16 octobre, 19:00 – 21:00 (au lieu de jeudi 15 octobre, 19:00 – 21:00)");
+    }
+
+    @Test
+    void formatMove_shouldGiveThePreviousStartAlone_whenItHadNoEnd() {
+        String notice = paris.formatMove(Instant.parse("2026-10-15T18:00:00Z"), Instant.parse("2026-10-15T19:00:00Z"),
+                Instant.parse("2026-10-15T17:00:00Z"), null);
+
+        assertThat(notice).isEqualTo("🔁 Sortie décalée : jeudi 15 octobre, 20:00 – 21:00 (au lieu de 19:00)");
+    }
+
+    @Test
+    void formatMove_shouldWriteBothDaysOfEither_whenOneSpansSeveralDays() {
+        String notice = paris.formatMove(Instant.parse("2026-10-15T20:00:00Z"), Instant.parse("2026-10-16T00:00:00Z"),
+                Instant.parse("2026-10-15T17:00:00Z"), Instant.parse("2026-10-15T19:00:00Z"));
+
+        assertThat(notice).isEqualTo("🔁 Sortie décalée : du jeudi 15 octobre 22:00 au vendredi 16 octobre 02:00"
+                + " (au lieu de jeudi 15 octobre, 19:00 – 21:00)");
+    }
+
+    @Test
+    void formatMove_shouldGiveTheWholePreviousDate_whenThePreviousOneSpannedSeveralDays() {
+        String notice = paris.formatMove(Instant.parse("2026-10-15T17:00:00Z"), Instant.parse("2026-10-15T19:00:00Z"),
+                Instant.parse("2026-10-15T08:00:00Z"), Instant.parse("2026-10-16T08:00:00Z"));
+
+        assertThat(notice).isEqualTo("🔁 Sortie décalée : jeudi 15 octobre, 19:00 – 21:00"
+                + " (au lieu du jeudi 15 octobre 10:00 au vendredi 16 octobre 10:00)");
+    }
 }
