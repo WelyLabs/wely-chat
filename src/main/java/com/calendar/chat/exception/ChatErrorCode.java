@@ -64,10 +64,35 @@ public enum ChatErrorCode {
             "A photo is removed by whoever sent it, or in an event's group by its organizer.",
             HttpStatus.FORBIDDEN),
 
+    /** Like CONVERSATION_NOT_FOUND: an unknown call and someone else's call look the same. */
+    CALL_NOT_FOUND(
+            "CHT-BUS-008",
+            "Call not found",
+            "No live call matches the given identifier for this user.",
+            HttpStatus.NOT_FOUND),
+
+    CALL_FULL(
+            "CHT-BUS-009",
+            "Call full",
+            "This call already has as many participants as it can take.",
+            HttpStatus.CONFLICT),
+
+    CALL_TRACK_DENIED(
+            "CHT-BUS-010",
+            "Track not available",
+            "Only the tracks published by participants of this call can be received.",
+            HttpStatus.FORBIDDEN),
+
     MEDIA_UNAVAILABLE(
             "CHT-TEC-001",
             "Photo storage unavailable",
             "The photo could not be stored or removed; try again shortly.",
+            HttpStatus.BAD_GATEWAY),
+
+    CALLS_UNAVAILABLE(
+            "CHT-TEC-002",
+            "Calls unavailable",
+            "The call service could not be reached; try again shortly.",
             HttpStatus.BAD_GATEWAY);
 
     private final String code;
