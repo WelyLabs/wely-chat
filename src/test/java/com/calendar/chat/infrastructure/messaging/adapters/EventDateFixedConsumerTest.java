@@ -99,6 +99,19 @@ class EventDateFixedConsumerTest {
     }
 
     @Test
+    @DisplayName("a move by the organizer posts the new date with the previous one")
+    void eventDateFixed_shouldPostAMoveNotice_whenThePreviousDatesAreGiven() {
+        when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
+
+        consumer.eventDateFixed().accept(Flux.just(record("""
+                {"eventId":"e1","title":"Bowling","start":"2026-10-15T18:00:00Z","end":"2026-10-15T20:00:00Z",
+                 "organizerId":"olivia","previousStart":"2026-10-15T17:00:00Z","previousEnd":"2026-10-15T19:00:00Z"}""")));
+
+        verify(chatService, timeout(2000)).postSystemNotice("e1",
+                "🔁 Sortie décalée : jeudi 15 octobre, 20:00 – 22:00 (au lieu de 19:00 – 21:00)");
+    }
+
+    @Test
     @DisplayName("an unreadable record is dropped, and the next one still posted")
     void eventDateFixed_shouldDropAnUnreadableRecord_andKeepConsuming() {
         when(chatService.postSystemNotice(eq("e2"), anyString())).thenReturn(posted());

@@ -17,7 +17,8 @@ import java.time.Duration;
 import java.util.function.Consumer;
 
 /**
- * Consumes {@code EVENT_DATE_FIXED}: posts a notice in the event's group saying when it takes place.
+ * Consumes {@code EVENT_DATE_FIXED}: posts a notice in the event's group saying when it takes place,
+ * fixed by a poll or moved by its organizer.
  *
  * <p>One consumer group for every pod, as for {@link EventGroupConsumer}: each notice is posted once.
  * The group may not exist yet when the record arrives — wely-events announces it on another topic —
@@ -64,8 +65,14 @@ public class EventDateFixedConsumer {
                 .flatMap(this::post);
     }
 
+    private String noticeOf(EventDateFixedDTO fixed) {
+        return fixed.isMove()
+                ? formatter.formatMove(fixed.start(), fixed.end(), fixed.previousStart(), fixed.previousEnd())
+                : formatter.format(fixed.start(), fixed.end());
+    }
+
     private Mono<Void> post(EventDateFixedDTO fixed) {
-        return Mono.defer(() -> chatService.postSystemNotice(fixed.eventId(), formatter.format(fixed.start(), fixed.end())))
+        return Mono.defer(() -> chatService.postSystemNotice(fixed.eventId(), noticeOf(fixed)))
                 .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
                 .onErrorResume(error -> {
                     log.error("EVENT_DATE_FIXED dropped after {} attempts, eventId={}: {}",
