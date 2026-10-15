@@ -26,4 +26,6 @@ public interface MessageBucketRepository extends ReactiveMongoRepository<Message
     /** The bucket holding the message, projected down to that one message. */
     @Query(value = "{ 'conversationId': ?0, 'messages.m_id': ?1 }", fields = "{ 'conversationId': 1, 'bucketIndex': 1, 'messages.$': 1 }")
     Mono<MessageBucketEntity> findWithMessage(String conversationId, String messageId);
+
+    Mono<Long> deleteByConversationId(String conversationId);
 }

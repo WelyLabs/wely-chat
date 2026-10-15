@@ -494,4 +494,31 @@ class PhotoServiceTest {
                 })
                 .verifyComplete();
     }
+
+    // --- purgeConversation ------------------------------------------------
+
+    @Test
+    void purgeConversation_shouldRemoveEveryFile_thenTheEntries() {
+        ConversationPhoto second = new ConversationPhoto("c1", "m2", "bob", Photo.stored("chat/c1/m2.jpg", 10, 10), NOW);
+        when(photoRepository.findAll("c1")).thenReturn(Flux.just(photoOf("alice"), second));
+        when(mediaStore.delete(org.mockito.ArgumentMatchers.anyString())).thenReturn(Mono.empty());
+        when(photoRepository.deleteAll("c1")).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.purgeConversation("c1")).verifyComplete();
+
+        verify(mediaStore).delete("chat/c1/m1.jpg");
+        verify(mediaStore).delete("chat/c1/m2.jpg");
+        verify(photoRepository).deleteAll("c1");
+    }
+
+    @Test
+    void purgeConversation_shouldStillRemoveTheEntries_whenAFileCannotBeRemoved() {
+        when(photoRepository.findAll("c1")).thenReturn(Flux.just(photoOf("alice")));
+        when(mediaStore.delete("chat/c1/m1.jpg")).thenReturn(Mono.error(new IllegalStateException("media down")));
+        when(photoRepository.deleteAll("c1")).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.purgeConversation("c1")).verifyComplete();
+
+        verify(photoRepository).deleteAll("c1");
+    }
 }

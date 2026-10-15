@@ -1,7 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.EventGroup;
-import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.EventGroupService;
 import com.calendar.chat.infrastructure.messaging.mappers.EventGroupMapper;
 import com.calendar.chat.infrastructure.messaging.models.EventGroupChangedDTO;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,27 +29,27 @@ import static org.mockito.Mockito.when;
 class EventGroupConsumerTest {
 
     @Mock
-    private ChatService chatService;
+    private EventGroupService eventGroupService;
 
     private EventGroupConsumer consumer;
 
     @BeforeEach
     void setUp() {
-        consumer = new EventGroupConsumer(chatService, Mappers.getMapper(EventGroupMapper.class));
+        consumer = new EventGroupConsumer(eventGroupService, Mappers.getMapper(EventGroupMapper.class));
     }
 
     private static Message<EventGroupChangedDTO> record(String eventId) {
-        return MessageBuilder.withPayload(new EventGroupChangedDTO(eventId, "t", "a", List.of("a"), 1)).build();
+        return MessageBuilder.withPayload(new EventGroupChangedDTO(eventId, "t", "a", List.of("a"), 1, false)).build();
     }
 
     @Test
     void eventGroup_shouldApplyEachRecord() {
-        when(chatService.applyEventGroup(any())).thenReturn(Mono.empty());
+        when(eventGroupService.apply(any())).thenReturn(Mono.empty());
 
         consumer.eventGroup().accept(Flux.just(record("e1"), record("e2")));
 
-        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e1", "t", "a", List.of("a"), 1));
-        verify(chatService, timeout(2000)).applyEventGroup(new EventGroup("e2", "t", "a", List.of("a"), 1));
+        verify(eventGroupService, timeout(2000)).apply(new EventGroup("e1", "t", "a", List.of("a"), 1));
+        verify(eventGroupService, timeout(2000)).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
     }
 
     @Test
@@ -58,16 +58,16 @@ class EventGroupConsumerTest {
         AtomicInteger attempts = new AtomicInteger();
         EventGroup failing = new EventGroup("e1", "t", "a", List.of("a"), 1);
         EventGroup next = new EventGroup("e2", "t", "a", List.of("a"), 1);
-        when(chatService.applyEventGroup(failing)).thenReturn(Mono.defer(() -> {
+        when(eventGroupService.apply(failing)).thenReturn(Mono.defer(() -> {
             attempts.incrementAndGet();
             return Mono.error(new IllegalStateException("mongo down"));
         }));
-        when(chatService.applyEventGroup(next)).thenReturn(Mono.empty());
+        when(eventGroupService.apply(next)).thenReturn(Mono.empty());
 
         consumer.eventGroup().accept(Flux.just(record("e1"), record("e2")));
 
         // One attempt plus three retries with backoff from 1s, then the next record.
-        verify(chatService, timeout(20_000)).applyEventGroup(next);
+        verify(eventGroupService, timeout(20_000)).apply(next);
         assertThat(attempts.get()).isEqualTo(4);
     }
 }

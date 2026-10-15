@@ -12,5 +12,7 @@ public record EventGroupChangedDTO(
         String title,
         String organizerId,
         List<String> memberIds,
-        long version
+        long version,
+        // True once the event is deleted; absent, and so false, in records sent before.
+        boolean deleted
 ) {}

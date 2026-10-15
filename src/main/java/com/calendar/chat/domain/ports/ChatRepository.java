@@ -34,6 +34,13 @@ public interface ChatRepository {
     /** Like {@link #postSystemMessage}, into any conversation by its id. Empty if it does not exist. */
     Mono<PostedMessage> postSystemMessageToConversation(String conversationId, Message message);
 
+    /**
+     * Empties a deleted event's group: no member, no message left. The conversation itself stays,
+     * holding the version, so a late and older change cannot bring the group back. Emits the
+     * conversation's id when this call emptied it; empty when it was already closed or newer.
+     */
+    Mono<String> closeEventGroup(String eventId, long version);
+
     Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
                                                                 Integer bucketIndex,
                                                                 String requesterId);

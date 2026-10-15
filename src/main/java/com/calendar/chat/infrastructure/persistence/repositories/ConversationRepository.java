@@ -49,6 +49,11 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
     @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': ?2, 'title': ?3, 'organizerId': ?4 } }")
     Mono<Long> updateEventGroup(String eventId, long version, List<String> memberIds, String title, String organizerId);
 
+    /** Empties a deleted event's group, unless it already holds this version or a newer one. */
+    @Query("{ 'eventId': ?0, $or: [ { 'groupVersion': { $lt: ?1 } }, { 'groupVersion': null } ] }")
+    @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': [] }, '$unset': { 'lastMessage': '' } }")
+    Mono<Long> closeEventGroup(String eventId, long version);
+
     /** The preview of a conversation whose last message is the one whose photo was removed. */
     @Query("{ '_id': ?0, 'lastMessage.m_id': ?1 }")
     @Update("{ '$set': { 'lastMessage.ph.rm': true, 'lastMessage.ph.w': 0, 'lastMessage.ph.h': 0 }, '$unset': { 'lastMessage.ph.k': '' } }")

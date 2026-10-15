@@ -314,6 +314,21 @@ class MongoChatRepositoryAdapterIntegrationTest {
     }
 
     @Test
+    @DisplayName("a deleted event's group is emptied for good: no member, no message, and a late list is ignored")
+    void closeEventGroup_shouldEmptyTheGroupForGood() {
+        adapter.saveEventGroup(GROUP).block();
+        String groupId = adapter.findByEventId("event-1", ALICE).block().getId();
+        adapter.postMessage(messageFrom(ALICE, groupId, "who brings the cards?")).block();
+
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).expectNext(groupId).verifyComplete();
+        adapter.saveEventGroup(new EventGroup("event-1", "Board games", List.of(ALICE, BOB), 4)).block();
+
+        StepVerifier.create(adapter.findByEventId("event-1", ALICE)).verifyComplete();
+        StepVerifier.create(adapter.findUserConversations(ALICE)).verifyComplete();
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).verifyComplete();
+    }
+
+    @Test
     @DisplayName("a group gets its first bucket with its first message, and every member as recipient")
     void postMessage_shouldWriteTheFirstMessageOfAGroup() {
         adapter.saveEventGroup(GROUP).block();

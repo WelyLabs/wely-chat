@@ -203,4 +203,18 @@ public class PhotoService {
         return chatRepository.findById(conversationId, userId)
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
     }
+
+    /**
+     * Removes every photo of a conversation, files first. A file that cannot be removed is left
+     * behind rather than keeping the entries that point at it.
+     */
+    public Mono<Void> purgeConversation(String conversationId) {
+        return photoRepository.findAll(conversationId)
+                .concatMap(photo -> mediaStore.delete(photo.photo().key()).onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.WARNING, "Photo file {0} not removed: {1}",
+                            photo.photo().key(), error.toString());
+                    return Mono.empty();
+                }))
+                .then(photoRepository.deleteAll(conversationId));
+    }
 }

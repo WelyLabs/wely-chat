@@ -10,6 +10,7 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
 import com.calendar.chat.domain.services.CallService;
+import com.calendar.chat.domain.services.EventGroupService;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.PresenceService;
@@ -59,6 +60,17 @@ class ChatApplicationConfigTest {
 
         assertThat(service).isNotNull();
         verifyNoInteractions(presence, chats);
+    }
+
+    @Test
+    @DisplayName("the event group service is built by hand too")
+    void eventGroupService_shouldBuildTheDomainService() {
+        ChatRepository repository = mock(ChatRepository.class);
+
+        EventGroupService service = config.eventGroupService(repository, mock(PhotoService.class));
+
+        assertThat(service).isNotNull();
+        verifyNoInteractions(repository);
     }
 
     @Test

@@ -85,4 +85,20 @@ class MongoConversationPhotoRepositoryAdapterTest {
 
         verify(repository).deleteByConversationIdAndMessageId("c1", "m1");
     }
+
+    @Test
+    void findAll_shouldReadEveryPhotoOfTheConversation() {
+        when(repository.findByConversationId("c1")).thenReturn(Flux.just(entity));
+
+        StepVerifier.create(adapter.findAll("c1")).expectNext(photo).verifyComplete();
+    }
+
+    @Test
+    void deleteAll_shouldDeleteTheConversationsEntries() {
+        when(repository.deleteByConversationId("c1")).thenReturn(Mono.just(2L));
+
+        StepVerifier.create(adapter.deleteAll("c1")).verifyComplete();
+
+        verify(repository).deleteByConversationId("c1");
+    }
 }

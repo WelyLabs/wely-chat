@@ -10,6 +10,7 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.EventGroupService;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.ports.MediaStore;
@@ -39,6 +40,11 @@ public class ChatApplicationConfig {
     public PhotoService photoService(ChatRepository chatRepository, ConversationPhotoRepository photoRepository,
                                      MediaStore mediaStore, ChatService chatService) {
         return new PhotoService(chatRepository, photoRepository, mediaStore, chatService, Clock.systemUTC());
+    }
+
+    @Bean
+    public EventGroupService eventGroupService(ChatRepository chatRepository, PhotoService photoService) {
+        return new EventGroupService(chatRepository, photoService);
     }
 
     /** The instance id is the broadcast one: each pod's own, which its connections carry. */

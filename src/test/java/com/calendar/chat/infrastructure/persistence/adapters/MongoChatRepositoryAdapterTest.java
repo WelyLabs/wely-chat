@@ -300,6 +300,44 @@ class MongoChatRepositoryAdapterTest {
     private static final EventGroup GROUP = new EventGroup("event-1", "Board games", List.of("ines", "me"), 3);
 
     @Test
+    @DisplayName("a deleted event's group is emptied, its messages removed, and its id handed back")
+    void closeEventGroup_shouldEmptyTheGroup_andDeleteItsBuckets() {
+        when(conversationRepository.closeEventGroup("event-1", 5)).thenReturn(Mono.just(1L));
+        when(conversationRepository.findByEventId("event-1")).thenReturn(Mono.just(eventGroup(List.of())));
+        when(messageBucketRepository.deleteByConversationId(CONVERSATION_ID)).thenReturn(Mono.just(2L));
+
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).expectNext(CONVERSATION_ID).verifyComplete();
+
+        verify(messageBucketRepository).deleteByConversationId(CONVERSATION_ID);
+    }
+
+    @Test
+    @DisplayName("a group never created gets an empty one holding the version, so a late change is ignored")
+    void closeEventGroup_shouldLeaveATombstone_forAGroupNeverCreated() {
+        when(conversationRepository.closeEventGroup("event-1", 5)).thenReturn(Mono.just(0L));
+        when(conversationRepository.insert(any(ConversationEntity.class)))
+                .thenAnswer(call -> Mono.just(call.getArgument(0)));
+
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).verifyComplete();
+
+        ArgumentCaptor<ConversationEntity> inserted = ArgumentCaptor.forClass(ConversationEntity.class);
+        verify(conversationRepository).insert(inserted.capture());
+        assertThat(inserted.getValue().getParticipantIds()).isEmpty();
+        assertThat(inserted.getValue().getGroupVersion()).isEqualTo(5L);
+        verify(messageBucketRepository, never()).deleteByConversationId(any());
+    }
+
+    @Test
+    @DisplayName("a group already closed, or newer, is left alone")
+    void closeEventGroup_shouldDoNothing_whenTheGroupIsNewer() {
+        when(conversationRepository.closeEventGroup("event-1", 5)).thenReturn(Mono.just(0L));
+        when(conversationRepository.insert(any(ConversationEntity.class)))
+                .thenReturn(Mono.error(new DuplicateKeyException("eventId")));
+
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).verifyComplete();
+    }
+
+    @Test
     @DisplayName("an existing older group is updated in place, nothing inserted")
     void saveEventGroup_shouldUpdateAnOlderGroup() {
         when(conversationRepository.updateEventGroup("event-1", 3, GROUP.memberIds(), "Board games", null))

@@ -20,4 +20,9 @@ public interface ConversationPhotoRepository {
     Mono<ConversationPhoto> find(String conversationId, String messageId);
 
     Mono<Void> delete(String conversationId, String messageId);
+
+    /** Every photo of a conversation, in no particular order. */
+    Flux<ConversationPhoto> findAll(String conversationId);
+
+    Mono<Void> deleteAll(String conversationId);
 }

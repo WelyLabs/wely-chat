@@ -6,7 +6,6 @@ import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.ConversationSummary;
-import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
@@ -310,16 +309,6 @@ class ChatServiceTest {
         when(chatRepository.findByEventId("event-1", "me")).thenReturn(Mono.just(detail));
 
         StepVerifier.create(chatService.readEventConversation("event-1", "me")).expectNext(detail).verifyComplete();
-    }
-
-    @Test
-    void applyEventGroup_shouldSaveTheGroup() {
-        EventGroup group = new EventGroup("event-1", "Board games", List.of("ines", "me"), 2);
-        when(chatRepository.saveEventGroup(group)).thenReturn(Mono.empty());
-
-        StepVerifier.create(chatService.applyEventGroup(group)).verifyComplete();
-
-        verify(chatRepository).saveEventGroup(group);
     }
 
     // --- system notices ---------------------------------------------------

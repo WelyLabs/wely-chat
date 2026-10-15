@@ -3,7 +3,6 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
-import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
@@ -169,11 +168,6 @@ public class ChatService {
     /** An event's group, for one of its members; empty for anyone else, or before it exists. */
     public Mono<ConversationDetail> readEventConversation(String eventId, String requesterId) {
         return chatRepository.findByEventId(eventId, requesterId);
-    }
-
-    /** Brings an event's group in line with the members wely-events announced. */
-    public Mono<Void> applyEventGroup(EventGroup group) {
-        return chatRepository.saveEventGroup(group);
     }
 
     /** The same message for one recipient: a group message is delivered once per member. */

@@ -15,9 +15,16 @@ class EventGroupMapperTest {
 
     @Test
     void toEventGroup_shouldCarryEveryField() {
-        EventGroupChangedDTO dto = new EventGroupChangedDTO("event-1", "Board games", "ines", List.of("ines", "me"), 4);
+        EventGroupChangedDTO dto = new EventGroupChangedDTO("event-1", "Board games", "ines", List.of("ines", "me"), 4, false);
 
         assertThat(mapper.toEventGroup(dto)).isEqualTo(new EventGroup("event-1", "Board games", "ines", List.of("ines", "me"), 4));
+    }
+
+    @Test
+    void toEventGroup_shouldCarryTheDeletion() {
+        EventGroupChangedDTO dto = new EventGroupChangedDTO("event-1", "Board games", null, List.of(), 5, true);
+
+        assertThat(mapper.toEventGroup(dto).deleted()).isTrue();
     }
 
     @Test

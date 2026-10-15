@@ -49,4 +49,14 @@ public class MongoConversationPhotoRepositoryAdapter implements ConversationPhot
     public Mono<Void> delete(String conversationId, String messageId) {
         return repository.deleteByConversationIdAndMessageId(conversationId, messageId).then();
     }
+
+    @Override
+    public Flux<ConversationPhoto> findAll(String conversationId) {
+        return repository.findByConversationId(conversationId).map(mapper::toDomain);
+    }
+
+    @Override
+    public Mono<Void> deleteAll(String conversationId) {
+        return repository.deleteByConversationId(conversationId).then();
+    }
 }

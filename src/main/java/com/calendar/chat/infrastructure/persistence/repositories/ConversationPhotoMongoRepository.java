@@ -19,4 +19,8 @@ public interface ConversationPhotoMongoRepository extends ReactiveMongoRepositor
     Mono<ConversationPhotoEntity> findByConversationIdAndMessageId(String conversationId, String messageId);
 
     Mono<Long> deleteByConversationIdAndMessageId(String conversationId, String messageId);
+
+    Flux<ConversationPhotoEntity> findByConversationId(String conversationId);
+
+    Mono<Long> deleteByConversationId(String conversationId);
 }

@@ -1,6 +1,6 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
-import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.EventGroupService;
 import com.calendar.chat.infrastructure.messaging.mappers.EventGroupMapper;
 import com.calendar.chat.infrastructure.messaging.models.EventGroupChangedDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -33,11 +33,11 @@ public class EventGroupConsumer {
     private static final int MAX_ATTEMPTS = 3;
     private static final Duration FIRST_BACKOFF = Duration.ofSeconds(1);
 
-    private final ChatService chatService;
+    private final EventGroupService eventGroupService;
     private final EventGroupMapper mapper;
 
-    public EventGroupConsumer(ChatService chatService, EventGroupMapper mapper) {
-        this.chatService = chatService;
+    public EventGroupConsumer(EventGroupService eventGroupService, EventGroupMapper mapper) {
+        this.eventGroupService = eventGroupService;
         this.mapper = mapper;
     }
 
@@ -54,7 +54,7 @@ public class EventGroupConsumer {
     private Mono<Void> apply(Message<EventGroupChangedDTO> record) {
         EventGroupChangedDTO group = record.getPayload();
 
-        return Mono.defer(() -> chatService.applyEventGroup(mapper.toEventGroup(group)))
+        return Mono.defer(() -> eventGroupService.apply(mapper.toEventGroup(group)))
                 .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
                 .onErrorResume(error -> {
                     log.error("EVENT_GROUP_CHANGED dropped after {} attempts, eventId={} version={}: {}",

@@ -276,6 +276,23 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .then();
     }
 
+    /**
+     * A group never created here still gets its empty conversation, holding the version, so that a
+     * late change for the deleted event is recognised as older and ignored.
+     */
+    @Override
+    public Mono<String> closeEventGroup(String eventId, long version) {
+        return conversationRepository.closeEventGroup(eventId, version)
+                .flatMap(updated -> updated > 0
+                        ? conversationRepository.findByEventId(eventId)
+                                .flatMap(conversation -> messageBucketRepository.deleteByConversationId(conversation.getId())
+                                        .thenReturn(conversation.getId()))
+                        : conversationRepository.insert(new ConversationEntity(null, List.of(), null, Instant.now(),
+                                        ConversationType.EVENT.name(), eventId, null, version, null))
+                                .onErrorResume(DuplicateKeyException.class, newer -> Mono.empty())
+                                .then(Mono.empty()));
+    }
+
     /** In the bucket that holds the message, and in the conversation's preview if it is the last one. */
     @Override
     public Mono<Void> markPhotoRemoved(String conversationId, String messageId) {
