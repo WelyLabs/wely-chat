@@ -19,4 +19,6 @@ public interface PresenceConnectionRepository extends ReactiveMongoRepository<Pr
     @Query("{ '_id': { $in: ?0 } }")
     @Update("{ '$set': { 'seenAt': ?1 } }")
     Mono<Long> refresh(Collection<String> connectionIds, Instant at);
+
+    Mono<Long> deleteByUserId(String userId);
 }

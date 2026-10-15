@@ -8,6 +8,8 @@ import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
+import com.calendar.chat.infrastructure.persistence.repositories.ConversationRepository;
+import com.calendar.chat.infrastructure.persistence.repositories.MessageBucketRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,6 +75,12 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
     @Autowired
     private ReactiveMongoTemplate mongoTemplate;
+
+    @Autowired
+    private MessageBucketRepository messageBucketRepository;
+
+    @Autowired
+    private ConversationRepository conversationRepository;
 
     private static final String ALICE = "alice";
     private static final String BOB = "bob";
@@ -484,5 +492,211 @@ class MongoChatRepositoryAdapterIntegrationTest {
         StepVerifier.create(adapter.findById(conversation.getId(), BOB))
                 .assertNext(read -> assertThat(read.getMessages().getFirst().type()).isEqualTo(MessageType.TEXT))
                 .verifyComplete();
+    }
+
+    // --- account erasure --------------------------------------------------
+
+    private ConversationDetail conversationOf(String... participantIds) {
+        return adapter.saveWithInitialBucket(List.of(participantIds)).block();
+    }
+
+    private List<Message> everyMessage(String conversationId, String reader) {
+        return Flux.range(0, (int) bucketCount(conversationId))
+                .concatMap(index -> adapter.findBucketByConversationIdAndBucketIndex(conversationId, index, reader))
+                .flatMapIterable(bucket -> bucket.messages())
+                .collectList()
+                .block();
+    }
+
+    @Test
+    @DisplayName("anonymizing clears the user's name in every bucket of every conversation, and nothing else")
+    void anonymizeSender_shouldClearTheNameOnEveryMessageOfTheUser_inEveryBucket_andLeaveOthersAlone() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        ConversationDetail withCarol = conversationOf(ALICE, "carol");
+        // 60 identified messages: two buckets, alternating senders.
+        Flux.range(0, 60)
+                .concatMap(i -> post(new Message("m-" + i, i % 2 == 0 ? ALICE : BOB, i % 2 == 0 ? ALICE : BOB, BOB,
+                        withBob.getId(), "message " + i, Instant.now())))
+                .blockLast();
+        Message photo = new Message("photo-1", ALICE, ALICE, null, withCarol.getId(), "le podium", Instant.now(),
+                Photo.stored("chat/" + withCarol.getId() + "/photo-1.jpg", 1600, 1200));
+        post(photo).block();
+        post(messageFrom("carol", withCarol.getId(), "nice")).block();
+
+        adapter.anonymizeSender(ALICE).block();
+
+        List<Message> first = everyMessage(withBob.getId(), BOB);
+        assertThat(bucketCount(withBob.getId())).isEqualTo(2);
+        assertThat(first).hasSize(60);
+        assertThat(first).filteredOn(message -> ALICE.equals(message.senderId()))
+                .hasSize(30)
+                .allSatisfy(message -> {
+                    assertThat(message.senderName()).isNull();
+                    assertThat(message.id()).isEqualTo("m-" + message.content().substring("message ".length()));
+                });
+        assertThat(first).filteredOn(message -> BOB.equals(message.senderId()))
+                .extracting(Message::senderName).containsOnly(BOB);
+        List<Message> second = everyMessage(withCarol.getId(), "carol");
+        assertThat(second.getFirst().id()).isEqualTo("photo-1");
+        assertThat(second.getFirst().senderName()).isNull();
+        assertThat(second.getFirst().content()).isEqualTo("le podium");
+        assertThat(second.getFirst().photo().key()).isEqualTo("chat/" + withCarol.getId() + "/photo-1.jpg");
+        assertThat(second.get(1).senderName()).isEqualTo("carol");
+    }
+
+    @Test
+    @DisplayName("the preview loses the name when the user's message is the last one, and only then")
+    void anonymizeSender_shouldClearThePreview_whenTheUsersMessageIsTheLastOne() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        ConversationDetail withCarol = conversationOf(ALICE, "carol");
+        post(messageFrom(ALICE, withBob.getId(), "last from alice")).block();
+        post(messageFrom(ALICE, withCarol.getId(), "hello")).block();
+        post(messageFrom("carol", withCarol.getId(), "last from carol")).block();
+
+        adapter.anonymizeSender(ALICE).block();
+
+        StepVerifier.create(adapter.findUserConversations(ALICE).collectMap(summary -> summary.id()))
+                .assertNext(byId -> {
+                    Message bobPreview = byId.get(withBob.getId()).lastMessage();
+                    assertThat(bobPreview.senderId()).isEqualTo(ALICE);
+                    assertThat(bobPreview.senderName()).isNull();
+                    assertThat(bobPreview.content()).isEqualTo("last from alice");
+                    assertThat(byId.get(withCarol.getId()).lastMessage().senderName()).isEqualTo("carol");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a replayed erasure finds nothing left to change")
+    void anonymizeSender_shouldModifyNothing_onReplay() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        post(messageFrom(ALICE, withBob.getId(), "hi")).block();
+
+        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(1L).verifyComplete();
+        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(1L).verifyComplete();
+
+        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(0L).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("each bucket is rewritten atomically: a message appended meanwhile is never lost")
+    void anonymizeSender_shouldNotLoseAMessageAppendedConcurrently() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        Flux.range(0, 20).concatMap(i -> post(messageFrom(ALICE, withBob.getId(), "before " + i))).blockLast();
+
+        Flux.merge(
+                        Flux.range(0, 20).flatMap(i -> post(messageFrom(BOB, withBob.getId(), "during " + i)), 4),
+                        Flux.range(0, 5).concatMap(i -> adapter.anonymizeSender(ALICE)))
+                .blockLast();
+
+        List<Message> messages = everyMessage(withBob.getId(), BOB);
+        assertThat(messages).hasSize(40);
+        assertThat(messages).filteredOn(message -> ALICE.equals(message.senderId()))
+                .extracting(Message::senderName).containsOnlyNulls();
+        assertThat(messages).filteredOn(message -> BOB.equals(message.senderId()))
+                .extracting(Message::senderName).containsOnly(BOB);
+    }
+
+    @Test
+    @DisplayName("the user's messages are found through the multikey index, not by scanning every bucket")
+    void anonymizeSender_shouldUseTheMessagesSenderIndex() {
+        conversationOf(ALICE, BOB);
+
+        StepVerifier.create(mongoTemplate.indexOps(MessageBucketEntity.class).getIndexInfo()
+                        .map(index -> index.getName()).collectList())
+                .assertNext(names -> assertThat(names).contains("messages_sender", "conversation_bucket_unique"))
+                .verifyComplete();
+        org.bson.Document plan = mongoTemplate.getCollection("message_buckets")
+                .flatMap(collection -> reactor.core.publisher.Mono.from(collection
+                        .find(new org.bson.Document("messages", new org.bson.Document("$elemMatch",
+                                new org.bson.Document("s_id", ALICE).append("s_un", new org.bson.Document("$ne", null)))))
+                        .explain()))
+                .block();
+        assertThat(plan.toJson()).contains("messages_sender");
+    }
+
+    @Test
+    @DisplayName("only the user's private conversations become read-only, never an event group or someone else's")
+    void markDirectConversationsReadOnly_shouldFlagOnlyTheUsersDirectConversations_notEventGroups() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        ConversationDetail bobAndCarol = conversationOf(BOB, "carol");
+        adapter.saveEventGroup(GROUP).block();
+
+        adapter.markDirectConversationsReadOnly(ALICE).block();
+
+        assertThat(adapter.findById(withBob.getId(), BOB).block().isReadOnly()).isTrue();
+        assertThat(adapter.findById(bobAndCarol.getId(), BOB).block().isReadOnly()).isFalse();
+        assertThat(adapter.findByEventId("event-1", BOB).block().isReadOnly()).isFalse();
+        StepVerifier.create(conversationRepository.markDirectReadOnly(ALICE)).expectNext(0L).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the list carries readOnly, false for every conversation stored without the flag")
+    void findUserConversations_shouldExposeReadOnly_andDefaultToFalse() {
+        ConversationDetail withAlice = conversationOf(ALICE, BOB);
+        ConversationDetail withCarol = conversationOf(BOB, "carol");
+        adapter.markDirectConversationsReadOnly(ALICE).block();
+
+        StepVerifier.create(adapter.findUserConversations(BOB).collectMap(summary -> summary.id(), summary -> summary.readOnly()))
+                .assertNext(readOnly -> {
+                    assertThat(readOnly.get(withAlice.getId())).isTrue();
+                    assertThat(readOnly.get(withCarol.getId())).isFalse();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the membership check reads the conversation, flag included, and nobody else's")
+    void findMembership_shouldReturnTheConversationWithoutMessages_forAParticipantOnly() {
+        ConversationDetail withBob = conversationOf(ALICE, BOB);
+        post(messageFrom(ALICE, withBob.getId(), "hi")).block();
+        adapter.markDirectConversationsReadOnly(BOB).block();
+
+        StepVerifier.create(adapter.findMembership(withBob.getId(), ALICE))
+                .assertNext(found -> {
+                    assertThat(found.getParticipantIds()).containsExactly(ALICE, BOB);
+                    assertThat(found.getMessages()).isNull();
+                    assertThat(found.isReadOnly()).isTrue();
+                })
+                .verifyComplete();
+        StepVerifier.create(adapter.findMembership(withBob.getId(), MALLORY)).verifyComplete();
+    }
+
+    private org.bson.Document storedGroup(String eventId) {
+        return mongoTemplate.findOne(Query.query(Criteria.where("eventId").is(eventId)), org.bson.Document.class,
+                "conversations").block();
+    }
+
+    @Test
+    @DisplayName("a deleted event's group keeps only its event id and version: no title, no organizer")
+    void closeEventGroup_shouldAlsoForgetTitleAndOrganizer_andKeepTheVersion() {
+        adapter.saveEventGroup(new EventGroup("event-1", "Alice's birthday", ALICE, List.of(ALICE, BOB), 2)).block();
+
+        adapter.closeEventGroup("event-1", 3).block();
+
+        org.bson.Document closed = storedGroup("event-1");
+        assertThat(closed).doesNotContainKeys("title", "organizerId", "lastMessage");
+        assertThat(closed.getLong("groupVersion")).isEqualTo(3L);
+        assertThat(closed.getList("participantIds", String.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("groups closed before this change lose the title the deleted organizer wrote; live ones keep it")
+    void forgetClosedGroupsOrganizedBy_shouldUnsetTitleAndOrganizer_onClosedGroupsOnly() {
+        adapter.saveEventGroup(new EventGroup("live", "Board games", ALICE, List.of(ALICE, BOB), 2)).block();
+        mongoTemplate.insert(new ConversationEntity(null, List.of(), null, Instant.now(), "EVENT", "closed-by-alice",
+                "Alice's birthday", 4L, ALICE, null)).block();
+        mongoTemplate.insert(new ConversationEntity(null, List.of(), null, Instant.now(), "EVENT", "closed-by-bob",
+                "Bob's party", 4L, BOB, null)).block();
+
+        adapter.forgetClosedGroupsOrganizedBy(ALICE).block();
+
+        assertThat(storedGroup("closed-by-alice")).doesNotContainKeys("title", "organizerId");
+        assertThat(storedGroup("closed-by-alice").getLong("groupVersion")).isEqualTo(4L);
+        assertThat(storedGroup("closed-by-bob").getString("title")).isEqualTo("Bob's party");
+        assertThat(storedGroup("live").getString("title")).isEqualTo("Board games");
+        assertThat(storedGroup("live").getString("organizerId")).isEqualTo(ALICE);
+        StepVerifier.create(conversationRepository.forgetClosedGroupsOrganizedBy(ALICE)).expectNext(0L).verifyComplete();
     }
 }

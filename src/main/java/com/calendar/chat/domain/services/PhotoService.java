@@ -46,26 +46,26 @@ public class PhotoService {
     private final ConversationPhotoRepository photoRepository;
     private final MediaStore mediaStore;
     private final ChatService chatService;
+    private final AccountGuard guard;
     private final Clock clock;
 
     public PhotoService(ChatRepository chatRepository, ConversationPhotoRepository photoRepository, MediaStore mediaStore,
-                        ChatService chatService, Clock clock) {
+                        ChatService chatService, AccountGuard guard, Clock clock) {
         this.chatRepository = chatRepository;
         this.photoRepository = photoRepository;
         this.mediaStore = mediaStore;
         this.chatService = chatService;
+        this.guard = guard;
         this.clock = clock;
     }
 
-    /**
-     * Sends a photo, with an optional caption, as a message of the conversation.
-     *
-     * <p>Stored before the message is written, so no message ever points at a missing file; if the
-     * message cannot be written, the file is removed again. The media tab's entry comes last and
-     * does not fail the send: without it the photo is still in the thread.
-     */
+    /** Sends a photo with an optional caption, stored before its message and removed again if the message fails. */
     public Mono<Message> send(String conversationId, String senderId, String senderName, byte[] upload, String caption) {
-        return requireMember(conversationId, senderId)
+        return guard.requireActive(senderId)
+                .then(Mono.defer(() -> requireMember(conversationId, senderId)))
+                .flatMap(conversation -> conversation.isReadOnly()
+                        ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        : Mono.just(conversation))
                 // Deferred: built eagerly, an outsider's upload would be sent to wely-media before membership was checked.
                 .then(Mono.defer(() -> {
                     String messageId = UUID.randomUUID().toString();
@@ -99,14 +99,10 @@ public class PhotoService {
                 .flatMapIterable(photos -> photos);
     }
 
-    /**
-     * Removes a photo for everyone. The message stays, marked as having held a photo, so the thread
-     * keeps its shape; the file goes after, so a failure there leaves an orphan file rather than a
-     * message pointing at nothing. The other members then get the message again, marked UPDATED,
-     * so their thread changes without a reload; a failure there does not fail the removal.
-     */
+    /** Removes a photo for everyone; its message stays, marked as having held one, and the file goes last. */
     public Mono<Void> remove(String conversationId, String messageId, String requesterId) {
-        return requireMember(conversationId, requesterId)
+        return guard.requireActive(requesterId)
+                .then(Mono.defer(() -> requireMember(conversationId, requesterId)))
                 .flatMap(conversation -> photoRepository.find(conversationId, messageId)
                         .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.PHOTO_NOT_FOUND)))
                         .flatMap(photo -> conversation.mayRemovePhotoOf(photo.senderId(), requesterId)

@@ -28,4 +28,9 @@ public interface MessageBucketRepository extends ReactiveMongoRepository<Message
     Mono<MessageBucketEntity> findWithMessage(String conversationId, String messageId);
 
     Mono<Long> deleteByConversationId(String conversationId);
+
+    /** Clears the user's sender name in every bucket still naming them, one atomic update per bucket. */
+    @Query("{ 'messages': { '$elemMatch': { 's_id': ?0, 's_un': { '$ne': null } } } }")
+    @Update(pipeline = { "{ '$set': { 'messages': { '$map': { 'input': '$messages', 'as': 'm', 'in': { '$cond': [ { '$eq': [ '$$m.s_id', ?0 ] }, { '$mergeObjects': [ '$$m', { 's_un': null } ] }, '$$m' ] } } } } }" })
+    Mono<Long> clearSenderName(String userId);
 }

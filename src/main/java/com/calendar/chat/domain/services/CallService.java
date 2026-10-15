@@ -8,6 +8,7 @@ import com.calendar.chat.domain.models.CallMedia;
 import com.calendar.chat.domain.models.CallParticipant;
 import com.calendar.chat.domain.models.CallStatus;
 import com.calendar.chat.domain.models.CallSubscription;
+import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.LayerChoice;
 import com.calendar.chat.domain.models.LocalTrack;
 import com.calendar.chat.domain.models.RemoteTrack;
@@ -59,12 +60,13 @@ public class CallService {
     private final CallBroadcaster callBroadcaster;
     private final ChatService chatService;
     private final CallNoticeFormatter noticeFormatter;
+    private final AccountGuard guard;
     private final int maxParticipants;
     private final Clock clock;
 
     public CallService(CallRepository callRepository, ChatRepository chatRepository, MediaRelay mediaRelay,
                        IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster, ChatService chatService,
-                       CallNoticeFormatter noticeFormatter, int maxParticipants, Clock clock) {
+                       CallNoticeFormatter noticeFormatter, AccountGuard guard, int maxParticipants, Clock clock) {
         this.callRepository = callRepository;
         this.chatRepository = chatRepository;
         this.mediaRelay = mediaRelay;
@@ -72,17 +74,19 @@ public class CallService {
         this.callBroadcaster = callBroadcaster;
         this.chatService = chatService;
         this.noticeFormatter = noticeFormatter;
+        this.guard = guard;
         this.maxParticipants = maxParticipants;
         this.clock = clock;
     }
 
-    /**
-     * Starts a call in a conversation the caller belongs to, and rings the other members. If the
-     * conversation already has a live call, that one is returned instead: the caller joins it.
-     */
+    /** Rings the other members of a conversation the caller may write to, or returns its live call. */
     public Mono<Call> start(String userId, String conversationId, CallMedia media) {
-        return chatRepository.findById(conversationId, userId)
+        return guard.requireActive(userId)
+                .then(Mono.defer(() -> chatRepository.findById(conversationId, userId)))
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .flatMap(conversation -> conversation.isReadOnly()
+                        ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        : Mono.just(conversation))
                 .flatMap(conversation -> callRepository.findLive(conversationId)
                         .switchIfEmpty(Mono.defer(() -> callRepository
                                 .createOrGetLive(Call.ringing(conversationId, userId, media, clock.instant(),
@@ -99,12 +103,10 @@ public class CallService {
                 .flatMap(conversation -> callRepository.findLive(conversationId));
     }
 
-    /**
-     * Puts the caller in a live call, with a fresh relay session: joining again from another tab
-     * or after a reload replaces the previous one.
-     */
+    /** Puts the caller in a live call with a fresh relay session, replacing any previous one. */
     public Mono<CallJoin> join(String userId, String callId) {
-        return liveCallOfMember(userId, callId)
+        return guard.requireActive(userId)
+                .then(Mono.defer(() -> liveCallOfMember(userId, callId)))
                 .flatMap(call -> {
                     boolean alreadyIn = call.participant(userId).isPresent();
                     if (!alreadyIn && call.participants().size() >= maxParticipants) {
@@ -195,18 +197,53 @@ public class CallService {
                 .then();
     }
 
-    /**
-     * A member refuses a ringing call. In a direct conversation that ends it; in a group the call
-     * goes on, and those in it are told.
-     */
+    /** A member refuses a ringing call: a direct call ends, a group call only tells those in it. */
     public Mono<Void> decline(String userId, String callId) {
-        return liveCallOfMember(userId, callId)
+        return guard.requireActive(userId)
+                .then(Mono.defer(() -> liveCallOfMember(userId, callId)))
                 .flatMap(call -> {
                     if (call.status() == CallStatus.RINGING && call.memberIds().size() == 2) {
                         return end(call, CallStatus.DECLINED, userId);
                     }
                     return notify(call, CallEventType.DECLINED, userId, call.participantIdsExcept(userId));
                 })
+                .then();
+    }
+
+    /** Takes a deleted account out of every call, never ending one MISSED. */
+    public Mono<Void> removeUser(String userId) {
+        return callRepository.findLiveInvolving(userId)
+                .concatMap(call -> call.participant(userId)
+                        // Withdrawn before its session closes, so subscribe or renegotiate cannot reopen tracks.
+                        .map(participant -> withdraw(userId, call.id()).then(Mono.defer(() -> cutOff(participant))))
+                        .orElseGet(() -> ringsInVain(call, userId)
+                                ? end(call, CallStatus.ENDED, userId).then()
+                                : Mono.empty()))
+                .then(Mono.defer(() -> callRepository.removeFromEndedCalls(userId)));
+    }
+
+    /** A ringing call nobody can answer any more: the deleted account rang, or was the only one rung. */
+    private static boolean ringsInVain(Call call, String userId) {
+        return call.status() == CallStatus.RINGING
+                && (call.startedBy().equals(userId) || call.memberIds().size() == 2);
+    }
+
+    /** Best-effort: a relay that cannot be reached still lets the participant be taken out. */
+    private Mono<Void> cutOff(CallParticipant participant) {
+        return mediaRelay.closeSession(participant.sessionId())
+                .onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.WARNING, "Relay session of a deleted account not closed: {0}",
+                            error.toString());
+                    return Mono.empty();
+                });
+    }
+
+    /** Like {@link #leave}, but the last one out ends the call ENDED, never MISSED. */
+    private Mono<Void> withdraw(String userId, String callId) {
+        return callRepository.removeParticipant(callId, userId)
+                .flatMap(call -> call.participants().isEmpty()
+                        ? end(call, CallStatus.ENDED, userId)
+                        : notify(call, CallEventType.PARTICIPANT_LEFT, userId, call.participantIds()))
                 .then();
     }
 

@@ -56,17 +56,41 @@ class ConversationControllerTest {
 
     @Test
     @DisplayName("identity comes from the token, never from a client parameter")
-    void getConversation_shouldDeriveTheCallerFromTheToken() {
+    void getConversation_shouldPassTheCallerFromTheTokenAndTheFriendSeparately() {
         givenAuthenticatedCaller();
         ConversationDetail detail = new ConversationDetail();
-        when(chatService.readOrCreateConversation(List.of(CALLER_ID, "friend-1")))
-                .thenReturn(Mono.just(detail));
+        when(chatService.readOrCreateConversation(CALLER_ID, "friend-1")).thenReturn(Mono.just(detail));
 
         StepVerifier.create(controller.getConversation(jwt, "friend-1"))
                 .assertNext(response -> assertThat(response.getBody()).isSameAs(detail))
                 .verifyComplete();
 
-        verify(chatService).readOrCreateConversation(List.of(CALLER_ID, "friend-1"));
+        verify(chatService).readOrCreateConversation(CALLER_ID, "friend-1");
+    }
+
+    @Test
+    @DisplayName("a deleted caller gets CHT-BUS-011, which GlobalErrorHandler answers as 410")
+    void getConversation_shouldFailWithAccountDeleted_whenTheCallerIsDeleted() {
+        givenAuthenticatedCaller();
+        when(chatService.readOrCreateConversation(CALLER_ID, "friend-1"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+
+        StepVerifier.create(controller.getConversation(jwt, "friend-1"))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .verify();
+    }
+
+    @Test
+    void getConversation_shouldFailAsNotFound_whenTheFriendIsDeletedAndNoConversationExists() {
+        givenAuthenticatedCaller();
+        when(chatService.readOrCreateConversation(CALLER_ID, "gone"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+
+        StepVerifier.create(controller.getConversation(jwt, "gone"))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .verify();
     }
 
     // --- readPreviousMessages ---------------------------------------------
@@ -174,7 +198,8 @@ class ConversationControllerTest {
     void getConversations_shouldListOnlyTheCallersConversations() {
         givenAuthenticatedCaller();
         ConversationSummary summary =
-                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", Instant.now(), null, null);
+                new ConversationSummary(CONVERSATION_ID, List.of("me", "friend"), null, "Title", Instant.now(), null, null,
+                        false);
         when(chatService.readConversations(CALLER_ID)).thenReturn(Flux.just(summary));
 
         var response = controller.getConversations(jwt);
@@ -184,5 +209,18 @@ class ConversationControllerTest {
                 .expectNext(summary)
                 .verifyComplete();
         verify(chatService).readConversations(CALLER_ID);
+    }
+
+    @Test
+    @DisplayName("the client reads readOnly straight from the list, without a second call")
+    void getConversations_shouldExposeReadOnly() {
+        givenAuthenticatedCaller();
+        ConversationSummary withDeleted = new ConversationSummary(CONVERSATION_ID, List.of(CALLER_ID, "gone"),
+                null, null, Instant.now(), null, null, true);
+        when(chatService.readConversations(CALLER_ID)).thenReturn(Flux.just(withDeleted));
+
+        StepVerifier.create(controller.getConversations(jwt).getBody())
+                .assertNext(summary -> assertThat(summary.readOnly()).isTrue())
+                .verifyComplete();
     }
 }

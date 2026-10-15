@@ -15,6 +15,10 @@ import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.PresenceService;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.services.AccountErasureService;
+import com.calendar.chat.domain.services.AccountGuard;
+import com.calendar.chat.domain.services.LiveSessions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
@@ -33,7 +37,7 @@ class ChatApplicationConfigTest {
         ChatRepository repository = mock(ChatRepository.class);
         MessageBroadcaster broadcaster = mock(MessageBroadcaster.class);
 
-        ChatService service = config.chatService(repository, broadcaster);
+        ChatService service = config.chatService(repository, broadcaster, mock(AccountGuard.class));
 
         // No @Service on ChatService: that is what makes it testable without a Spring
         // context and keeps the domain free of framework annotations.
@@ -45,7 +49,7 @@ class ChatApplicationConfigTest {
     @DisplayName("the photo service is built by hand too, from its ports")
     void photoService_shouldBuildTheDomainServiceFromItsPorts() {
         PhotoService service = config.photoService(mock(ChatRepository.class), mock(ConversationPhotoRepository.class),
-                mock(MediaStore.class), mock(ChatService.class));
+                mock(MediaStore.class), mock(ChatService.class), mock(AccountGuard.class));
 
         assertThat(service).isNotNull();
     }
@@ -56,7 +60,7 @@ class ChatApplicationConfigTest {
         PresenceRepository presence = mock(PresenceRepository.class);
         ChatRepository chats = mock(ChatRepository.class);
 
-        PresenceService service = config.presenceService(presence, chats, "pod-1");
+        PresenceService service = config.presenceService(presence, chats, mock(AccountGuard.class), "pod-1");
 
         assertThat(service).isNotNull();
         verifyNoInteractions(presence, chats);
@@ -81,10 +85,39 @@ class ChatApplicationConfigTest {
 
         CallService service = config.callService(calls, mock(ChatRepository.class), relay,
                 mock(IceServerProvider.class), mock(CallBroadcaster.class), mock(ChatService.class),
-                mock(CallNoticeFormatter.class), 12);
+                mock(CallNoticeFormatter.class), mock(AccountGuard.class), 12);
 
         assertThat(service).isNotNull();
         verifyNoInteractions(calls, relay);
+    }
+
+    @Test
+    void accountGuard_shouldBuildTheDomainServiceFromItsPort() {
+        DeletedUserMarkers markers = mock(DeletedUserMarkers.class);
+
+        assertThat(config.accountGuard(markers)).isNotNull();
+        verifyNoInteractions(markers);
+    }
+
+    @Test
+    void liveSessions_shouldBuildTheDomainService() {
+        AccountGuard guard = mock(AccountGuard.class);
+
+        assertThat(config.liveSessions(guard)).isNotNull();
+        verifyNoInteractions(guard);
+    }
+
+    @Test
+    void accountErasureService_shouldBuildTheDomainServiceFromItsPorts_withoutTouchingThem() {
+        DeletedUserMarkers markers = mock(DeletedUserMarkers.class);
+        ChatRepository chats = mock(ChatRepository.class);
+        PresenceRepository presence = mock(PresenceRepository.class);
+
+        AccountErasureService service = config.accountErasureService(markers, chats, presence,
+                mock(CallService.class), mock(LiveSessions.class));
+
+        assertThat(service).isNotNull();
+        verifyNoInteractions(markers, chats, presence);
     }
 
     @Test

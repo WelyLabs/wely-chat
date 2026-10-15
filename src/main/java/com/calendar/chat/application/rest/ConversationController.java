@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/conversations")
 public class ConversationController {
@@ -34,7 +32,7 @@ public class ConversationController {
             @RequestParam String friendId) {
         String userId = jwt.getClaimAsString("businessId");
 
-        return chatService.readOrCreateConversation(List.of(userId, friendId))
+        return chatService.readOrCreateConversation(userId, friendId)
                 .flatMap(photoService::signed)
                 .map(ResponseEntity::ok);
     }

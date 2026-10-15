@@ -49,10 +49,25 @@ public interface ConversationRepository extends ReactiveMongoRepository<Conversa
     @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': ?2, 'title': ?3, 'organizerId': ?4 } }")
     Mono<Long> updateEventGroup(String eventId, long version, List<String> memberIds, String title, String organizerId);
 
-    /** Empties a deleted event's group, unless it already holds this version or a newer one. */
+    /** Empties a deleted event's group down to its event id and version, unless it holds this version or newer. */
     @Query("{ 'eventId': ?0, $or: [ { 'groupVersion': { $lt: ?1 } }, { 'groupVersion': null } ] }")
-    @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': [] }, '$unset': { 'lastMessage': '' } }")
+    @Update("{ '$set': { 'groupVersion': ?1, 'participantIds': [] }, '$unset': { 'lastMessage': '', 'title': '', 'organizerId': '' } }")
     Mono<Long> closeEventGroup(String eventId, long version);
+
+    /** The user's private conversations not yet read-only; uses the participantIds index. */
+    @Query("{ 'participantIds': ?0, 'eventId': null, 'readOnly': { $ne: true } }")
+    @Update("{ '$set': { 'readOnly': true } }")
+    Mono<Long> markDirectReadOnly(String userId);
+
+    /** Previews still naming the user, in any conversation, since the user may already have left the group. */
+    @Query("{ 'lastMessage.s_id': ?0, 'lastMessage.s_un': { $ne: null } }")
+    @Update("{ '$set': { 'lastMessage.s_un': null } }")
+    Mono<Long> clearLastSenderName(String userId);
+
+    /** Emptied event groups the user organized, which would otherwise keep a title they wrote. */
+    @Query("{ 'eventId': { $ne: null }, 'participantIds': { $size: 0 }, 'organizerId': ?0 }")
+    @Update("{ '$unset': { 'title': '', 'organizerId': '' } }")
+    Mono<Long> forgetClosedGroupsOrganizedBy(String userId);
 
     /** The preview of a conversation whose last message is the one whose photo was removed. */
     @Query("{ '_id': ?0, 'lastMessage.m_id': ?1 }")

@@ -10,8 +10,15 @@ import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageType;
+import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.ports.PresenceRepository;
+import com.calendar.chat.domain.services.AccountGuard;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PresenceService;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,11 +32,15 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Clock;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +54,7 @@ class MessageSocketControllerTest {
     @Mock private PresenceService presenceService;
     @Mock private Jwt jwt;
     @Mock private PhotoService photoService;
+    @Mock private LiveSessions liveSessions;
 
     private MessageSocketController controller;
 
@@ -50,7 +62,9 @@ class MessageSocketControllerTest {
     void setUp() {
         // Text messages carry no photo: signing hands them back unchanged.
         lenient().when(photoService.signed(any(LiveMessage.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
-        controller = new MessageSocketController(chatService, presenceService, photoService,
+        // An active account: the live session relays the stream as is.
+        lenient().when(liveSessions.attach(anyString(), any())).thenAnswer(call -> call.getArgument(1));
+        controller = new MessageSocketController(chatService, presenceService, photoService, liveSessions,
                 Mappers.getMapper(LiveMessageMapper.class));
     }
 
@@ -151,5 +165,60 @@ class MessageSocketControllerTest {
                     assertThat(frame.photo().url()).isEqualTo("https://signed");
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the tracked stream is what the live session holds, so deleting the account ends it")
+    void streamMessage_shouldAttachTheTrackedStreamToTheCallersLiveSession() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.empty());
+        Flux<Object> tracked = Flux.empty();
+        when(presenceService.track(eq(SENDER_ID), any())).thenReturn(tracked);
+
+        StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
+
+        verify(liveSessions).attach(SENDER_ID, tracked);
+    }
+
+    @Test
+    void streamMessage_shouldFail_whenLiveSessionsRefusesTheCaller() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
+        when(presenceService.track(eq(SENDER_ID), any())).thenReturn(Flux.never());
+        when(liveSessions.attach(eq(SENDER_ID), any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+
+        StepVerifier.create(controller.streamMessage(jwt))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .verify();
+    }
+
+    @Test
+    @DisplayName("a stream refused for a deleted account, or while the markers cannot be read, leaves no presence behind")
+    void streamMessage_shouldLeaveNothingForTheHeartbeat_whenLiveSessionsRefusesTheStream() {
+        DeletedUserMarkers markers = mock(DeletedUserMarkers.class);
+        PresenceRepository presenceRepository = mock(PresenceRepository.class);
+        AccountGuard guard = new AccountGuard(markers);
+        PresenceService presence = new PresenceService(presenceRepository, mock(ChatRepository.class), guard, "pod-1",
+                Clock.systemUTC());
+        MessageSocketController wired = new MessageSocketController(chatService, presence, photoService,
+                new LiveSessions(guard), Mappers.getMapper(LiveMessageMapper.class));
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
+        when(markers.isDeleted(SENDER_ID)).thenReturn(Mono.just(true),
+                Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(wired.streamMessage(jwt))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .verify();
+        StepVerifier.create(wired.streamMessage(jwt))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .verify();
+        StepVerifier.create(presence.heartbeat()).verifyComplete();
+
+        verify(presenceRepository, never()).connect(anyString(), anyString(), anyString(), any());
+        verify(presenceRepository, never()).refresh(any(), any());
     }
 }

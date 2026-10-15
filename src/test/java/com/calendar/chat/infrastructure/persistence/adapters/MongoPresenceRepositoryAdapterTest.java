@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.Presence;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import com.calendar.chat.infrastructure.persistence.models.entities.LastSeenEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.PresenceConnectionEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.LastSeenRepository;
@@ -9,8 +11,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -23,6 +27,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -100,5 +106,29 @@ class MongoPresenceRepositoryAdapterTest {
         StepVerifier.create(adapter.find("bob", NOW))
                 .expectNext(new Presence("bob", false, null))
                 .verifyComplete();
+    }
+
+    @Test
+    void forget_shouldDeleteTheConnectionsThenTheLastSeen() {
+        when(connectionRepository.deleteByUserId("alice")).thenReturn(Mono.just(2L));
+        when(lastSeenRepository.deleteById("alice")).thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+
+        InOrder order = inOrder(connectionRepository, lastSeenRepository);
+        order.verify(connectionRepository).deleteByUserId("alice");
+        order.verify(lastSeenRepository).deleteById("alice");
+    }
+
+    @Test
+    void forget_shouldTranslateAStoreFailure() {
+        when(connectionRepository.deleteByUserId("alice"))
+                .thenReturn(Mono.error(new DataAccessResourceFailureException("mongo down")));
+
+        StepVerifier.create(adapter.forget("alice"))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .verify();
+        verify(lastSeenRepository, never()).deleteById(any(String.class));
     }
 }

@@ -57,7 +57,7 @@ class RealtimeMapperTest {
 
     @Test
     void toRemoteTrack_shouldKeepTheReceivingMid() {
-        assertThat(mapper.toRemoteTrack(new RealtimeTrackResult("3", "camera", "s-alice", null, null)))
+        assertThat(mapper.toRemoteTrack(new RealtimeTrackResult("3", "camera", "s-alice", null, null, null)))
                 .isEqualTo(new RemoteTrack("s-alice", "camera", null, "3"));
     }
 

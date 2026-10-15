@@ -9,6 +9,7 @@ import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
 import com.calendar.chat.infrastructure.calls.mappers.RealtimeMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
 import org.springframework.http.HttpHeaders;
@@ -22,7 +23,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +36,8 @@ class CloudflareRealtimeAdapterTest {
     private static final String BASE = "https://rtc.example/v1";
 
     private final List<MockClientHttpRequest> sent = new ArrayList<>();
+    /** Answers in turn for a call that makes several requests; {@link #answer} once they run out. */
+    private final Deque<ClientResponse> answers = new ArrayDeque<>();
     private ClientResponse answer;
     private CloudflareRealtimeAdapter adapter;
 
@@ -48,7 +53,8 @@ class CloudflareRealtimeAdapterTest {
                 .exchangeFunction(request -> {
                     MockClientHttpRequest written = new MockClientHttpRequest(request.method(), request.url());
                     sent.add(written);
-                    return request.writeTo(written, ExchangeStrategies.withDefaults()).then(Mono.fromSupplier(() -> answer));
+                    return request.writeTo(written, ExchangeStrategies.withDefaults())
+                            .then(Mono.fromSupplier(() -> answers.isEmpty() ? answer : answers.poll()));
                 })
                 .build();
         return new CloudflareRealtimeAdapter(client, appId, Mappers.getMapper(RealtimeMapper.class));
@@ -153,6 +159,46 @@ class CloudflareRealtimeAdapterTest {
 
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-1/tracks/close");
         assertThat(sentBody()).contains("\"force\":true").contains("\"mid\":\"3\"");
+    }
+
+    @Test
+    @DisplayName("a session is closed track by track: every track still open, sent or received, is forced shut")
+    void closeSession_shouldCloseEveryTrackStillOpen() {
+        answers.add(json(HttpStatus.OK, """
+                {"tracks":[{"location":"local","mid":"0","trackName":"audio","status":"active"},
+                           {"location":"remote","mid":"3","trackName":"camera","sessionId":"s-alice","status":"active"},
+                           {"location":"remote","mid":"4","trackName":"audio","sessionId":"s-gone","status":"inactive"}]}"""));
+
+        StepVerifier.create(adapter.closeSession("s-bob")).verifyComplete();
+
+        assertThat(sent).hasSize(2);
+        assertThat(sent.get(0).getMethod()).isEqualTo(HttpMethod.GET);
+        assertThat(sent.get(0).getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-bob");
+        assertThat(sent.get(1).getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-bob/tracks/close");
+        assertThat(sent.get(1).getBodyAsString().block())
+                .contains("\"force\":true")
+                .contains("\"mid\":\"0\"")
+                .contains("\"mid\":\"3\"")
+                .doesNotContain("\"mid\":\"4\"");
+    }
+
+    @Test
+    void closeSession_shouldCloseNothing_whenNoTrackIsOpen() {
+        answers.add(json(HttpStatus.OK, "{\"tracks\":[]}"));
+
+        StepVerifier.create(adapter.closeSession("s-bob")).verifyComplete();
+
+        assertThat(sent).hasSize(1);
+    }
+
+    @Test
+    void closeSession_shouldFail_whenRealtimeCannotDescribeTheSession() {
+        answer = json(HttpStatus.NOT_FOUND, "{\"errorCode\":\"not_found\"}");
+
+        StepVerifier.create(adapter.closeSession("s-bob"))
+                .expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable)
+                .verify();
+        assertThat(sent).hasSize(1);
     }
 
     @Test

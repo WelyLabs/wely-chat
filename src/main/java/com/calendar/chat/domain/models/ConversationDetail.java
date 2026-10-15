@@ -21,10 +21,12 @@ public class ConversationDetail {
     private String eventId;
     /** The event's organizer for an event group, as wely-events names them; null otherwise. */
     private String organizerId;
+    /** True for a private conversation whose other participant deleted their account: readable, not writable. */
+    private boolean readOnly;
 
     public ConversationDetail(String id, List<String> participantIds, ConversationType type, List<Message> messages,
                               Integer bucketIndex, String title, String eventId) {
-        this(id, participantIds, type, messages, bucketIndex, title, eventId, null);
+        this(id, participantIds, type, messages, bucketIndex, title, eventId, null, false);
     }
 
     /**

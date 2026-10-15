@@ -181,4 +181,50 @@ class MongoCallRepositoryAdapterIntegrationTest {
                 .assertNext(ids -> assertThat(ids).containsExactlyInAnyOrder(ringing.id(), active.id()))
                 .verifyComplete();
     }
+
+    @Test
+    @DisplayName("a deleted account's live calls are those it is in, started or is rung in; ended ones are left out")
+    void findLiveInvolving_shouldFindLiveCallsTheUserIsInStartedOrIsRungIn_notEndedOnes() {
+        Call startedByAlice = start("conv-1");
+        Call joinedByAlice = adapter.createOrGetLive(Call.ringing("conv-2", "bob", CallMedia.AUDIO, T0,
+                List.of("alice", "bob"))).block();
+        adapter.addParticipant(joinedByAlice.id(), participant("alice", T0), 12).block();
+        Call ended = adapter.createOrGetLive(Call.ringing("conv-3", "alice", CallMedia.AUDIO, T0,
+                List.of("alice", "bob"))).block();
+        adapter.end(ended.id(), CallStatus.MISSED, T0).block();
+        Call ringingAlice = adapter.createOrGetLive(Call.ringing("conv-4", "bob", CallMedia.AUDIO, T0,
+                List.of("alice", "bob"))).block();
+        adapter.addParticipant(ringingAlice.id(), participant("bob", T0), 12).block();
+        Call answeredWithoutAlice = adapter.createOrGetLive(Call.ringing("conv-5", "bob", CallMedia.AUDIO, T0,
+                List.of("alice", "bob", "carol"))).block();
+        adapter.addParticipant(answeredWithoutAlice.id(), participant("bob", T0), 12).block();
+        adapter.addParticipant(answeredWithoutAlice.id(), participant("carol", T0), 12).block();
+        adapter.markActive(answeredWithoutAlice.id()).block();
+        adapter.createOrGetLive(Call.ringing("conv-6", "bob", CallMedia.AUDIO, T0, List.of("bob", "carol"))).block();
+
+        StepVerifier.create(adapter.findLiveInvolving("alice").map(Call::id).collectList())
+                .assertNext(ids -> assertThat(ids)
+                        .containsExactlyInAnyOrder(startedByAlice.id(), joinedByAlice.id(), ringingAlice.id()))
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("ended calls lose the user's session entries; live calls and the other participants are untouched")
+    void removeFromEndedCalls_shouldPullTheUserFromEndedCallsOnly() {
+        Call ended = start("conv-1");
+        adapter.addParticipant(ended.id(), participant("alice", T0), 12).block();
+        adapter.addParticipant(ended.id(), participant("bob", T0), 12).block();
+        adapter.end(ended.id(), CallStatus.ENDED, T0).block();
+        Call live = start("conv-2");
+        adapter.addParticipant(live.id(), participant("alice", T0), 12).block();
+
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+
+        Call endedAfter = adapter.findById(ended.id(), "alice").block();
+        assertThat(endedAfter.participantIds()).containsExactly("bob");
+        assertThat(endedAfter.memberIds()).contains("alice");
+        assertThat(endedAfter.startedBy()).isEqualTo("alice");
+        assertThat(adapter.findById(live.id(), "alice").block().participantIds()).containsExactly("alice");
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+    }
 }

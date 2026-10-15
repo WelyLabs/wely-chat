@@ -4,6 +4,8 @@ import com.calendar.chat.domain.models.Call;
 import com.calendar.chat.domain.models.CallMedia;
 import com.calendar.chat.domain.models.CallParticipant;
 import com.calendar.chat.domain.models.CallStatus;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import com.calendar.chat.infrastructure.persistence.mappers.CallPersistenceMapper;
 import com.calendar.chat.infrastructure.persistence.models.entities.CallEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.CallMongoRepository;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mapstruct.factory.Mappers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DuplicateKeyException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -159,5 +162,46 @@ class MongoCallRepositoryAdapterTest {
         StepVerifier.create(adapter.findRingingStartedBefore(NOW)).expectNext(call).verifyComplete();
         StepVerifier.create(adapter.findLiveWithParticipantSeenBefore(NOW)).expectNext(call).verifyComplete();
         StepVerifier.create(adapter.findLiveStartedBefore(NOW)).verifyComplete();
+    }
+
+    private static boolean storeUnavailable(Throwable error) {
+        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE;
+    }
+
+    @Test
+    void findLiveInvolving_shouldMapTheCalls() {
+        Call call = call(CallStatus.ACTIVE, bob());
+        when(repository.findLiveInvolving("bob")).thenReturn(Flux.just(mapper.toEntity(call)));
+
+        StepVerifier.create(adapter.findLiveInvolving("bob")).expectNext(call).verifyComplete();
+    }
+
+    @Test
+    void findLiveInvolving_shouldTranslateAStoreFailure() {
+        when(repository.findLiveInvolving("bob"))
+                .thenReturn(Flux.error(new DataAccessResourceFailureException("mongo down")));
+
+        StepVerifier.create(adapter.findLiveInvolving("bob"))
+                .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
+                .verify();
+    }
+
+    @Test
+    void removeFromEndedCalls_shouldDelegate() {
+        when(repository.pullFromEnded("bob")).thenReturn(Mono.just(4L));
+
+        StepVerifier.create(adapter.removeFromEndedCalls("bob")).verifyComplete();
+
+        verify(repository).pullFromEnded("bob");
+    }
+
+    @Test
+    void removeFromEndedCalls_shouldTranslateAStoreFailure() {
+        when(repository.pullFromEnded("bob"))
+                .thenReturn(Mono.error(new DataAccessResourceFailureException("mongo down")));
+
+        StepVerifier.create(adapter.removeFromEndedCalls("bob"))
+                .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
+                .verify();
     }
 }

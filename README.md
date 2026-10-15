@@ -279,8 +279,11 @@ Un appel appartient à une conversation, directe ou le groupe d'un événement :
 | `CHT-BUS-008` | 404 | Appel introuvable, terminé, **ou** dont l'appelant n'est pas membre |
 | `CHT-BUS-009` | 409 | Appel complet (12 participants) |
 | `CHT-BUS-010` | 403 | Piste qui n'est pas publiée dans cet appel |
+| `CHT-BUS-011` | 410 | Account deleted: its writes and new streams are refused |
+| `CHT-BUS-012` | 409 | Read-only private conversation: the other participant deleted their account |
 | `CHT-TEC-001` | 502 | wely-media injoignable ou en erreur |
 | `CHT-TEC-002` | 502 | Cloudflare Realtime injoignable, en erreur ou non configuré |
+| `CHT-TEC-004` | 502 | MongoDB unreachable, on the account-deletion paths (marker, erasure) |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
 | `CHT-TEC-000` | 500 | Erreur inattendue |
@@ -326,6 +329,7 @@ client peut tester et un `timestamp` :
 | `CHAT_CALL_TOPIC` | Topic des événements d'appel, `CALL_EVENTS` par défaut |
 | `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET` | Application Realtime SFU. Vides par défaut : le service démarre, les appels répondent `CHT-TEC-002` |
 | `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` | Clé TURN. Vides : STUN seul, ce qui suffit sur la plupart des réseaux |
+| `CHAT_USER_DELETED_ENABLED` | `true` by default; `false` unbinds the `USER_DELETED` consumer (see Account deletion) |
 
 ---
 
@@ -390,6 +394,54 @@ Un utilisateur est **en ligne tant qu'il a un flux `chat.stream` ouvert**, sur n
 - **Confidentialité** — `GET /presence/{userId}` ne répond que si l'appelant partage une conversation avec cette personne. Sinon `CHT-BUS-003`, identique pour un utilisateur inconnu, pour qu'on ne puisse pas sonder la présence de n'importe qui.
 
 Le front relit la présence toutes les 30 s pendant qu'une conversation est ouverte et affiche « En ligne », « Vu à 14:32 », « Vu hier à 09:05 » ou « Vu le 3 oct. ».
+
+## Account deletion
+
+wely-users publishes `USER_DELETED` (`{"userId", "deletedAt"}`) when an account is deleted. This
+service then erases what it holds about the account, and keeps its messages under the
+pseudonymous businessId.
+
+- **Consumer** — `UserDeletedConsumer`, binding `userDeleted-in-0`, group `chat-service-group`
+  shared by every pod (each record is erased once), `start-offset=earliest`. It is a
+  `Function<Flux<Message<byte[]>>, Mono<Void>>`: Spring Cloud Stream subscribes to it and binds no
+  output. An unreadable record is logged and skipped; a failed erasure is retried 5 times
+  (backoff 1 s to 30 s), then logged and skipped.
+- **Erasure** — `AccountErasureService`. MongoDB gives no transaction here, so every step is
+  idempotent and the whole erasure can run again:
+  1. a marker in `deleted_users` (`_id` = businessId, `deletedAt`, `erasedAt`), kept permanently:
+     every guard refuses the account from this point;
+  2. the account's `chat.stream` and `call.events` streams on this pod are completed;
+  3. `s_un` is set to null on its messages (`message_buckets`, one atomic pipeline update per
+     bucket through the multikey index `messages_sender`; a pipeline because Spring Data's
+     `@Update` cannot declare `arrayFilters`) and on previews (`lastMessage`, in every
+     conversation, including event groups the account has already left);
+  4. its private conversations get `readOnly: true`;
+  5. emptied event groups it organized lose their title and organizer (closing a group now drops
+     both);
+  6. in a live call, it leaves first, so a device still connected can no longer reopen tracks,
+     then its Cloudflare session is closed; a ringing call it started, or a ringing private call
+     to it, ends `ENDED`, never `MISSED`, so nobody is notified of a missed call from a deleted
+     account; ended calls lose its session entries;
+  7. `presence_connections` and `last_seen` are deleted;
+  8. `erasedAt` is set.
+- **Kept** — message ids, `s_id`, text, photos, private conversations (read-only), and
+  `startedBy` / `memberIds` of calls.
+- **Guards** — from the marker. A deleted account's message, photo, photo removal, call start,
+  join or decline, and stream opening answer `CHT-BUS-011` (410). A message, photo or call in a
+  read-only conversation answers `CHT-BUS-012` (409). `GET /conversations?friendId=` never creates a
+  conversation with a deleted friend: it returns the existing one or `CHT-BUS-001`. Presence is
+  never re-created by the heartbeat or a stream closing.
+- **Recipients** — message broadcasts skip deleted members, because past-event groups keep their
+  id. When the markers cannot be read, a stored message is still acknowledged and only its live
+  push is skipped: failing it would make the client resend a duplicate. Call events are not
+  filtered: a group call's `memberIds` may name a deleted id, and wely-notifications drops what it
+  receives for one.
+- **Several pods** — the record reaches one pod. `LiveSessionSweeper` runs on every pod and, every
+  30 s, completes the streams of accounts that now carry a marker. A completed stream (not a
+  failed one) stops the web app from reconnecting.
+- **Limitation** — the reactive binding acknowledges a record as it arrives, so a pod that crashes
+  mid-erasure loses it, like a record skipped after its retries. Until a replay exists, such an
+  account stays as the last completed step left it.
 
 ## Démarrage
 

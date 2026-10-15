@@ -12,6 +12,7 @@ import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.StoredMedia;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.MediaStore;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
@@ -59,6 +60,7 @@ class PhotoServiceTest {
     @Mock private ConversationPhotoRepository photoRepository;
     @Mock private MediaStore mediaStore;
     @Mock private ChatService chatService;
+    @Mock private DeletedUserMarkers markers;
 
     private PhotoService service;
 
@@ -74,8 +76,9 @@ class PhotoServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PhotoService(chatRepository, photoRepository, mediaStore, chatService,
+        service = new PhotoService(chatRepository, photoRepository, mediaStore, chatService, new AccountGuard(markers),
                 Clock.fixed(NOW, ZoneOffset.UTC));
+        lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
         lenient().when(mediaStore.urls(any())).thenAnswer(call -> Mono.just(signedUrls(call.getArgument(0))));
         lenient().when(chatRepository.findMessage(anyString(), anyString())).thenReturn(Mono.empty());
     }
@@ -134,6 +137,37 @@ class PhotoServiceTest {
                         && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
         verify(mediaStore, never()).store(any(), any(), any());
+    }
+
+    @Test
+    void send_shouldRefuseWithAccountDeleted_beforeUploading_whenTheSenderIsDeleted() {
+        when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .verify();
+        verify(chatRepository, never()).findById(any(), any());
+        verify(mediaStore, never()).store(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("nothing reaches wely-media for a private conversation whose other participant is deleted")
+    void send_shouldRefuseWithReadOnly_beforeUploading_whenTheConversationIsReadOnly() {
+        member(readOnlyDirect(), "alice");
+
+        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_READ_ONLY)
+                .verify();
+        verify(mediaStore, never()).store(any(), any(), any());
+        verify(chatService, never()).sendMessage(any());
+    }
+
+    /** Alice's private conversation with Bob, who deleted his account. */
+    private static ConversationDetail readOnlyDirect() {
+        return new ConversationDetail("c1", List.of("alice", "bob"), ConversationType.DIRECT, List.of(), 0, null,
+                null, null, true);
     }
 
     @Test
@@ -201,6 +235,38 @@ class PhotoServiceTest {
                         && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
         verify(photoRepository, never()).findPage(any(), any(), any(Integer.class));
+    }
+
+    @Test
+    @DisplayName("the survivor of a read-only conversation still pages through its photos")
+    void page_shouldStillListPhotos_inAReadOnlyConversation() {
+        member(readOnlyDirect(), "alice");
+        when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("bob")));
+
+        StepVerifier.create(service.page("c1", "alice", null, 30)).expectNextCount(1).verifyComplete();
+    }
+
+    @Test
+    void remove_shouldRefuseWithAccountDeleted_whenTheRequesterIsDeleted() {
+        when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.remove("c1", "m1", "alice"))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .verify();
+        verify(chatRepository, never()).markPhotoRemoved(any(), any());
+        verify(mediaStore, never()).delete(any());
+    }
+
+    @Test
+    void remove_shouldLetTheSurvivorRemoveTheirOwnPhoto_inAReadOnlyConversation() {
+        member(readOnlyDirect(), "alice");
+        removable("alice");
+        when(chatService.broadcastUpdate(any(), eq("alice"))).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+
+        verify(chatRepository).markPhotoRemoved("c1", "m1");
     }
 
     @Test

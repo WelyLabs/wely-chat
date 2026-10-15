@@ -131,4 +131,19 @@ class MongoPresenceRepositoryAdapterIntegrationTest {
         assertThat(ttl.get("key", Document.class)).containsKey("seenAt");
         assertThat(ttl.get("expireAfterSeconds", Number.class).longValue()).isEqualTo(120L);
     }
+
+    @Test
+    @DisplayName("forgetting a deleted account takes every connection and its last-seen time, nobody else's")
+    void forget_shouldDeleteEveryConnectionAndTheLastSeenOfTheUser_andLeaveOthers() {
+        adapter.connect("c-1", "alice", "pod-1", NOW).block();
+        adapter.connect("c-2", "alice", "pod-2", NOW).block();
+        adapter.connect("c-3", "bob", "pod-1", NOW).block();
+
+        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+
+        assertThat(adapter.find("alice", NOW.minusSeconds(90)).block()).isEqualTo(new Presence("alice", false, null));
+        assertThat(adapter.find("bob", NOW.minusSeconds(90)).block()).isEqualTo(new Presence("bob", true, NOW));
+        assertThat(mongoTemplate.count(new Query(), PresenceConnectionEntity.class).block()).isEqualTo(1L);
+        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+    }
 }

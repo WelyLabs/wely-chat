@@ -31,4 +31,7 @@ public interface MediaRelay {
 
     /** Stops receiving the tracks on these transceivers. */
     Mono<Void> closeTracks(String sessionId, List<String> mids);
+
+    /** Closes every track still open on a session, sent or received: its browser gets no more media. */
+    Mono<Void> closeSession(String sessionId);
 }

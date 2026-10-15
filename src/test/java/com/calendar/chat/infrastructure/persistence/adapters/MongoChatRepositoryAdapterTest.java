@@ -1,8 +1,11 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
+import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.exception.ChatErrorCode;
+import com.calendar.chat.exception.ChatException;
 import com.calendar.chat.infrastructure.persistence.mappers.ConversationMapper;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
@@ -16,8 +19,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
@@ -34,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -279,7 +285,8 @@ class MongoChatRepositoryAdapterTest {
     @Test
     void findUserConversations_shouldListWhatTheRepositoryKeeps() {
         ConversationEntity entity = ConversationEntity.direct(CONVERSATION_ID, List.of("me"), null, null);
-        ConversationSummary summary = new ConversationSummary(CONVERSATION_ID, List.of("me"), null, null, null, null, null);
+        ConversationSummary summary = new ConversationSummary(CONVERSATION_ID, List.of("me"), null, null, null, null, null,
+                false);
         when(conversationRepository.findListedByParticipant("me")).thenReturn(Flux.just(entity));
         when(conversationMapper.toConversationSummary(entity)).thenReturn(summary);
 
@@ -444,7 +451,7 @@ class MongoChatRepositoryAdapterTest {
 
     private static ConversationEntity eventGroup(List<String> memberIds) {
         return new ConversationEntity(CONVERSATION_ID, memberIds, null, Instant.EPOCH, "EVENT", "event-1",
-                "Board games", 2L, "olivia");
+                "Board games", 2L, "olivia", null);
     }
 
     @Test
@@ -524,5 +531,106 @@ class MongoChatRepositoryAdapterTest {
         StepVerifier.create(adapter.postSystemMessage("event-1", NOTICE))
                 .assertNext(posted -> assertThat(posted.participantIds()).isEmpty())
                 .verifyComplete();
+    }
+
+    // --- account erasure --------------------------------------------------
+
+    private static boolean storeUnavailable(Throwable error) {
+        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE;
+    }
+
+    private static DataAccessResourceFailureException mongoDown() {
+        return new DataAccessResourceFailureException("mongo down");
+    }
+
+    @Test
+    @DisplayName("the membership of a sender is read from the conversation alone, without a bucket")
+    void findMembership_shouldMapTheConversationWithoutReadingABucket() {
+        ConversationEntity entity = ConversationEntity.direct(CONVERSATION_ID, List.of(SENDER_ID, "friend"), null, null);
+        ConversationDetail detail = new ConversationDetail();
+        when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
+                .thenReturn(Mono.just(entity));
+        when(conversationMapper.toConversationDetail(entity)).thenReturn(detail);
+
+        StepVerifier.create(adapter.findMembership(CONVERSATION_ID, SENDER_ID)).expectNext(detail).verifyComplete();
+
+        verify(messageBucketRepository, never()).findFirstByConversationIdOrderByBucketIndexDesc(any());
+    }
+
+    @Test
+    void findMembership_shouldBeEmpty_forANonParticipant() {
+        when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, "mallory"))
+                .thenReturn(Mono.empty());
+
+        StepVerifier.create(adapter.findMembership(CONVERSATION_ID, "mallory")).verifyComplete();
+    }
+
+    @Test
+    void findMembership_shouldTranslateAStoreFailure() {
+        when(conversationRepository.findByIdAndParticipantIdsContaining(CONVERSATION_ID, SENDER_ID))
+                .thenReturn(Mono.error(mongoDown()));
+
+        StepVerifier.create(adapter.findMembership(CONVERSATION_ID, SENDER_ID))
+                .expectErrorMatches(MongoChatRepositoryAdapterTest::storeUnavailable)
+                .verify();
+    }
+
+    @Test
+    void anonymizeSender_shouldClearBucketsThenThePreview() {
+        when(messageBucketRepository.clearSenderName(SENDER_ID)).thenReturn(Mono.just(3L));
+        when(conversationRepository.clearLastSenderName(SENDER_ID)).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(adapter.anonymizeSender(SENDER_ID)).verifyComplete();
+
+        InOrder order = inOrder(messageBucketRepository, conversationRepository);
+        order.verify(messageBucketRepository).clearSenderName(SENDER_ID);
+        order.verify(conversationRepository).clearLastSenderName(SENDER_ID);
+    }
+
+    @Test
+    void anonymizeSender_shouldTranslateAStoreFailure_andLeaveThePreviewForTheNextRun() {
+        when(messageBucketRepository.clearSenderName(SENDER_ID)).thenReturn(Mono.error(mongoDown()));
+
+        StepVerifier.create(adapter.anonymizeSender(SENDER_ID))
+                .expectErrorMatches(MongoChatRepositoryAdapterTest::storeUnavailable)
+                .verify();
+
+        verify(conversationRepository, never()).clearLastSenderName(any());
+    }
+
+    @Test
+    void markDirectConversationsReadOnly_shouldDelegate() {
+        when(conversationRepository.markDirectReadOnly(SENDER_ID)).thenReturn(Mono.just(2L));
+
+        StepVerifier.create(adapter.markDirectConversationsReadOnly(SENDER_ID)).verifyComplete();
+
+        verify(conversationRepository).markDirectReadOnly(SENDER_ID);
+    }
+
+    @Test
+    void markDirectConversationsReadOnly_shouldTranslateAStoreFailure() {
+        when(conversationRepository.markDirectReadOnly(SENDER_ID)).thenReturn(Mono.error(mongoDown()));
+
+        StepVerifier.create(adapter.markDirectConversationsReadOnly(SENDER_ID))
+                .expectErrorMatches(MongoChatRepositoryAdapterTest::storeUnavailable)
+                .verify();
+    }
+
+    @Test
+    void forgetClosedGroupsOrganizedBy_shouldDelegate() {
+        when(conversationRepository.forgetClosedGroupsOrganizedBy(SENDER_ID)).thenReturn(Mono.just(1L));
+
+        StepVerifier.create(adapter.forgetClosedGroupsOrganizedBy(SENDER_ID)).verifyComplete();
+
+        verify(conversationRepository).forgetClosedGroupsOrganizedBy(SENDER_ID);
+    }
+
+    @Test
+    void forgetClosedGroupsOrganizedBy_shouldTranslateAStoreFailure() {
+        when(conversationRepository.forgetClosedGroupsOrganizedBy(SENDER_ID)).thenReturn(Mono.error(mongoDown()));
+
+        StepVerifier.create(adapter.forgetClosedGroupsOrganizedBy(SENDER_ID))
+                .expectErrorMatches(MongoChatRepositoryAdapterTest::storeUnavailable)
+                .verify();
     }
 }

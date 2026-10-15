@@ -60,4 +60,14 @@ public interface CallMongoRepository extends ReactiveMongoRepository<CallEntity,
 
     @Query("{ 'live': true, 'startedAt': { $lt: ?0 } }")
     Flux<CallEntity> findLiveStartedBefore(Instant startedBefore);
+
+    /** Live calls the user is in or started, and ringing calls they are a member of. */
+    @Query("{ 'live': true, $or: [ { 'participants.userId': ?0 }, { 'startedBy': ?0 },"
+            + " { 'status': 'RINGING', 'memberIds': ?0 } ] }")
+    Flux<CallEntity> findLiveInvolving(String userId);
+
+    /** Ended calls are never read again; this only drops the user's session entries. */
+    @Query("{ 'live': false, 'participants.userId': ?0 }")
+    @Update("{ '$pull': { 'participants': { 'userId': ?0 } } }")
+    Mono<Long> pullFromEnded(String userId);
 }
