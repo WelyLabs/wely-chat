@@ -13,6 +13,7 @@ import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
@@ -30,11 +31,14 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -49,30 +53,49 @@ class ChatServiceTest {
     @Mock
     private MessageBroadcaster messageBroadcaster;
 
+    @Mock
+    private DeletedUserMarkers markers;
+
     private static final Instant NOW = Instant.parse("2026-10-14T08:00:00Z");
 
     private ChatService chatService;
 
     @BeforeEach
     void setUp() {
-        chatService = new ChatService(chatRepository, messageBroadcaster, Clock.fixed(NOW, ZoneOffset.UTC));
+        chatService = new ChatService(chatRepository, messageBroadcaster, new AccountGuard(markers),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        // Nobody is deleted unless a test says so.
+        lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
+        lenient().when(markers.findDeletedAmong(any())).thenReturn(Flux.empty());
+    }
+
+    /** Lenient: each path asks the markers one way or the other. */
+    private void deleted(String... userIds) {
+        lenient().when(markers.isDeleted(anyString()))
+                .thenAnswer(call -> Mono.just(List.of(userIds).contains(call.getArgument(0))));
+        lenient().when(markers.findDeletedAmong(any())).thenAnswer(call -> Flux.fromIterable(call.<Collection<String>>getArgument(0))
+                .filter(List.of(userIds)::contains));
+    }
+
+    private static boolean failsWith(Throwable error, ChatErrorCode code) {
+        return error instanceof ChatException chat && chat.getErrorCode() == code;
     }
 
     @Test
-    void readOrCreateConversation_Existing() {
+    void readOrCreateConversation_shouldReturnTheExisting_whenBothAreActive() {
         List<String> participants = List.of("user1", "user2");
         ConversationDetail detail = new ConversationDetail(UUID.randomUUID().toString(), participants, null, List.of(),
                 0, null, null);
 
         when(chatRepository.findByParticipantIds(participants)).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readOrCreateConversation(participants))
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectNext(detail)
                 .verifyComplete();
     }
 
     @Test
-    void readOrCreateConversation_New() {
+    void readOrCreateConversation_shouldCreate_whenBothAreActiveAndNoneExists() {
         List<String> participants = List.of("user1", "user2");
         ConversationDetail detail = new ConversationDetail(UUID.randomUUID().toString(), participants, null, List.of(),
                 0, null, null);
@@ -80,9 +103,55 @@ class ChatServiceTest {
         when(chatRepository.findByParticipantIds(participants)).thenReturn(Mono.empty());
         when(chatRepository.saveWithInitialBucket(participants)).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readOrCreateConversation(participants))
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectNext(detail)
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the survivor still opens the conversation with a deleted friend, read-only")
+    void readOrCreateConversation_shouldReturnTheExistingConversation_whenTheFriendIsDeleted() {
+        deleted("user2");
+        ConversationDetail detail = new ConversationDetail("conv-1", List.of("user1", "user2"), ConversationType.DIRECT,
+                List.of(), 0, null, null, null, true);
+        when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.just(detail));
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).verifyComplete();
+
+        verify(chatRepository, never()).saveWithInitialBucket(any());
+    }
+
+    @Test
+    void readOrCreateConversation_shouldAnswerNotFound_andCreateNothing_whenTheFriendIsDeletedAndNoConversationExists() {
+        deleted("user2");
+        when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_NOT_FOUND))
+                .verify();
+
+        verify(chatRepository, never()).saveWithInitialBucket(any());
+    }
+
+    @Test
+    void readOrCreateConversation_shouldRefuseWithAccountDeleted_whenTheRequesterIsDeleted() {
+        deleted("user1");
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .verify();
+
+        verify(chatRepository, never()).findByParticipantIds(any());
+        verify(chatRepository, never()).saveWithInitialBucket(any());
+    }
+
+    private static ConversationDetail direct(boolean readOnly) {
+        return new ConversationDetail("conv-1", List.of("caller", "friend"), ConversationType.DIRECT, null, null,
+                null, null, null, readOnly);
+    }
+
+    private void memberOf(String senderId) {
+        when(chatRepository.findMembership("conv-1", senderId)).thenReturn(Mono.just(direct(false)));
     }
 
     private static Message messageFrom(String senderId) {
@@ -103,6 +172,7 @@ class ChatServiceTest {
     @DisplayName("a message reaches every other member, whoever the client named as receiver")
     void sendMessage_shouldBroadcastToEveryOtherMember() {
         Message message = messageFrom("caller");
+        memberOf("caller");
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines", "hugo")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
@@ -119,6 +189,7 @@ class ChatServiceTest {
     void sendMessage_shouldAssignAnId_whenTheClientSentNone() {
         Message withoutId = new Message(null, "caller", "Caller", null, "conv-1", "hello",
                 Instant.parse("2026-10-12T19:00:00Z"));
+        memberOf("caller");
         when(chatRepository.postMessage(any())).thenReturn(Mono.just(List.of("caller", "ines")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
@@ -137,6 +208,7 @@ class ChatServiceTest {
     @DisplayName("a message is persisted before it is broadcast, never the other way round")
     void sendMessage_shouldPersistBeforeBroadcasting() {
         Message message = messageFrom("caller");
+        memberOf("caller");
         InOrder order = inOrder(chatRepository, messageBroadcaster);
 
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "friend")));
@@ -152,6 +224,7 @@ class ChatServiceTest {
     @DisplayName("a failed write is not broadcast: no message shown that does not exist")
     void sendMessage_shouldNotBroadcastWhenThePersistFails() {
         Message message = messageFrom("caller");
+        memberOf("caller");
 
         when(chatRepository.postMessage(message))
                 .thenReturn(Mono.error(new IllegalStateException("mongo down")));
@@ -167,13 +240,84 @@ class ChatServiceTest {
     @DisplayName("a sender outside the conversation is refused, so the client shows the message as failed")
     void sendMessage_shouldFailAndReachNoOne_whenTheSenderIsNotAMember() {
         Message message = messageFrom("intruder");
-        when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
+        when(chatRepository.findMembership("conv-1", "intruder")).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.sendMessage(message))
                 .expectErrorMatches(error -> error instanceof ChatException
                         && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
 
+        verify(chatRepository, never()).postMessage(any());
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a sender who left between the membership check and the write is refused all the same")
+    void sendMessage_shouldFail_whenTheWriteFindsNoMembership() {
+        Message message = messageFrom("caller");
+        memberOf("caller");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.sendMessage(message))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_NOT_FOUND))
+                .verify();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a deleted sender writes nothing, even with a token still valid")
+    void sendMessage_shouldRefuseWithAccountDeleted_andWriteNothing_whenTheSenderIsDeleted() {
+        deleted("caller");
+
+        StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .verify();
+
+        verify(chatRepository, never()).findMembership(any(), any());
+        verify(chatRepository, never()).postMessage(any());
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("nobody writes in a private conversation whose other participant deleted their account")
+    void sendMessage_shouldRefuseWithReadOnly_andWriteNothing_whenTheConversationIsReadOnly() {
+        when(chatRepository.findMembership("conv-1", "caller")).thenReturn(Mono.just(direct(true)));
+
+        StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_READ_ONLY))
+                .verify();
+
+        verify(chatRepository, never()).postMessage(any());
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a past event's group keeps a deleted member's id, but no message is addressed to it")
+    void sendMessage_shouldNotBroadcastToDeletedMembers() {
+        Message message = messageFrom("caller");
+        memberOf("caller");
+        deleted("gone");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "gone", "ines")));
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+
+        verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
+        verify(messageBroadcaster, times(1)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a stored message is acknowledged even when the markers cannot be read: a retry would store it twice")
+    void sendMessage_shouldStillAcknowledge_whenTheMarkersCannotBeRead() {
+        Message message = messageFrom("caller");
+        memberOf("caller");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines")));
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+
+        verify(chatRepository).postMessage(message);
         verify(messageBroadcaster, never()).broadcast(any());
     }
 
@@ -236,6 +380,29 @@ class ChatServiceTest {
     }
 
     @Test
+    void broadcastUpdate_shouldSkipDeletedMembers() {
+        Message updated = photoRemovedBy("alice");
+        members("olivia", "olivia", "alice", "gone");
+        deleted("gone");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).verifyComplete();
+
+        verify(messageBroadcaster).broadcast(addressedTo(updated, "alice", BroadcastKind.UPDATED));
+        verify(messageBroadcaster, times(1)).broadcast(any());
+    }
+
+    @Test
+    void broadcastUpdate_shouldStillComplete_whenTheMarkersCannotBeRead() {
+        members("olivia", "olivia", "alice");
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "olivia")).verifyComplete();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
     void broadcastUpdate_shouldSendNothing_whenTheRequesterIsNotAMember() {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
@@ -294,7 +461,7 @@ class ChatServiceTest {
     void readConversations_Success() {
         String userId = "user1";
         ConversationSummary summary = new ConversationSummary(UUID.randomUUID().toString(), List.of("user1", "user2"), null, "Title",
-                Instant.now(), null, null);
+                Instant.now(), null, null, false);
 
         when(chatRepository.findUserConversations(userId)).thenReturn(Flux.just(summary));
 
@@ -404,6 +571,46 @@ class ChatServiceTest {
                     && "conv-9".equals(live.message().conversationId())));
         }
         verify(messageBroadcaster, times(3)).broadcast(any());
+    }
+
+    @Test
+    void postSystemNotice_shouldSkipDeletedMembers() {
+        groupStores("event-1", false, "olivia", "gone");
+        deleted("gone");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+
+        verify(messageBroadcaster).broadcast(argThat(live -> "olivia".equals(live.message().receiverId())));
+        verify(messageBroadcaster, times(1)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("the notice is stored: markers that cannot be read cost its live push, not the notice")
+    void postSystemNotice_shouldStillPostTheNotice_whenTheMarkersCannotBeRead() {
+        groupStores("event-1", false, "olivia", "bob");
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
+                .assertNext(notice -> assertThat(notice.content()).isEqualTo(NOTICE))
+                .verifyComplete();
+
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    void postConversationNotice_shouldSkipDeletedMembers() {
+        when(chatRepository.postSystemMessageToConversation(org.mockito.ArgumentMatchers.eq("conv-3"), any()))
+                .thenAnswer(call -> Mono.just(new PostedMessage(call.getArgument(1), List.of("alice", "gone"), false)));
+        deleted("gone");
+        when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.postConversationNotice("conv-3", "call:c1", "📞 Appel audio · 3 min"))
+                .expectNextCount(1)
+                .verifyComplete();
+
+        verify(messageBroadcaster).broadcast(argThat(live -> "alice".equals(live.message().receiverId())));
+        verify(messageBroadcaster, times(1)).broadcast(any());
     }
 
     @Test

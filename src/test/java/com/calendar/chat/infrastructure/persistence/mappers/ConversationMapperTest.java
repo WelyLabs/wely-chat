@@ -95,9 +95,10 @@ class ConversationMapperTest {
     @DisplayName("a summary becomes a conversation entity")
     void toConversationEntity_shouldMapTheSummary() {
         ConversationSummary summary = new ConversationSummary(
-                "conv-1", List.of("alice", "bob"), ConversationType.DIRECT, "Bob", SENT_AT, message(), null);
+                "conv-1", List.of("alice", "bob"), ConversationType.DIRECT, "Bob", SENT_AT, message(), null, true);
 
         ConversationEntity entity = mapper.toConversationEntity(summary);
+        assertThat(entity.getReadOnly()).isTrue();
 
         assertThat(entity.getId()).isEqualTo("conv-1");
         assertThat(entity.getUpdatedAt()).isEqualTo(SENT_AT);
@@ -125,7 +126,7 @@ class ConversationMapperTest {
     @DisplayName("an event group's summary carries its type, title and event")
     void toConversationSummary_shouldMapAnEventGroup() {
         ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
-                "EVENT", "event-1", "Board games", 2L, "alice");
+                "EVENT", "event-1", "Board games", 2L, "alice", null);
 
         ConversationSummary summary = mapper.toConversationSummary(entity);
 
@@ -138,13 +139,38 @@ class ConversationMapperTest {
     @DisplayName("an event group's detail carries its title and event, for the chat header")
     void toConversationDetail_shouldMapAnEventGroup() {
         ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
-                "EVENT", "event-1", "Board games", 2L, "alice");
+                "EVENT", "event-1", "Board games", 2L, "alice", null);
 
         ConversationDetail detail = mapper.toConversationDetail(entity);
 
         assertThat(detail.getType()).isEqualTo(ConversationType.EVENT);
         assertThat(detail.getTitle()).isEqualTo("Board games");
         assertThat(detail.getEventId()).isEqualTo("event-1");
+    }
+
+    @Test
+    void toConversationSummary_shouldMapReadOnly() {
+        ConversationEntity entity = ConversationEntity.direct("conv-1", List.of("alice", "bob"), null, SENT_AT);
+        entity.setReadOnly(true);
+
+        assertThat(mapper.toConversationSummary(entity).readOnly()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a conversation stored before account deletion existed has no flag, and reads as writable")
+    void toConversationSummary_shouldDefaultReadOnlyToFalse_whenAbsent() {
+        ConversationEntity entity = ConversationEntity.direct("conv-1", List.of("alice", "bob"), null, SENT_AT);
+
+        assertThat(mapper.toConversationSummary(entity).readOnly()).isFalse();
+        assertThat(mapper.toConversationDetail(entity).isReadOnly()).isFalse();
+    }
+
+    @Test
+    void toConversationDetail_shouldMapReadOnly() {
+        ConversationEntity entity = ConversationEntity.direct("conv-1", List.of("alice", "bob"), null, SENT_AT);
+        entity.setReadOnly(true);
+
+        assertThat(mapper.toConversationDetail(entity).isReadOnly()).isTrue();
     }
 
     @Test
@@ -236,7 +262,7 @@ class ConversationMapperTest {
     @Test
     void toConversationDetail_shouldCarryTheOrganizer() {
         ConversationEntity entity = new ConversationEntity("conv-2", List.of("alice", "bob"), null, SENT_AT,
-                "EVENT", "event-1", "Board games", 2L, "alice");
+                "EVENT", "event-1", "Board games", 2L, "alice", null);
 
         assertThat(mapper.toConversationDetail(entity).getOrganizerId()).isEqualTo("alice");
     }

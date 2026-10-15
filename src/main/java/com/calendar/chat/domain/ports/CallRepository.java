@@ -56,4 +56,10 @@ public interface CallRepository {
 
     /** Live calls that started before {@code startedBefore}. */
     Flux<Call> findLiveStartedBefore(Instant startedBefore);
+
+    /** Live calls the user is in or started, and ringing calls the user is a member of. */
+    Flux<Call> findLiveInvolving(String userId);
+
+    /** Takes the user's participant entries (session, tracks) out of every ended call. */
+    Mono<Void> removeFromEndedCalls(String userId);
 }

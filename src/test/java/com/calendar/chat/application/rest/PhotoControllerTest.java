@@ -82,6 +82,26 @@ class PhotoControllerTest {
     }
 
     @Test
+    void send_shouldFailWithAccountDeleted_whenTheSenderIsDeleted() {
+        when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq("")))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+
+        StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .verify();
+    }
+
+    @Test
+    void send_shouldFailWithReadOnly_whenTheConversationIsReadOnly() {
+        when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq("")))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY)));
+
+        StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_READ_ONLY))
+                .verify();
+    }
+
+    @Test
     void send_shouldSendWithoutCaption_whenThereIsNone() {
         when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq(""))).thenReturn(Mono.empty());
 

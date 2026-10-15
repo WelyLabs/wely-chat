@@ -40,10 +40,12 @@ public class ConversationEntity {
     private Long groupVersion;
     /** An event group's organizer, who may remove its photos; absent on groups announced before it was named. */
     private String organizerId;
+    /** True on a private conversation whose other participant deleted their account; absent otherwise. */
+    private Boolean readOnly;
 
     /** A private conversation between these participants. A factory, so MapStruct sees one constructor. */
     public static ConversationEntity direct(String id, List<String> participantIds, MessageEntity lastMessage,
                                             Instant updatedAt) {
-        return new ConversationEntity(id, participantIds, lastMessage, updatedAt, null, null, null, null, null);
+        return new ConversationEntity(id, participantIds, lastMessage, updatedAt, null, null, null, null, null, null);
     }
 }

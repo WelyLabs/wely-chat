@@ -34,12 +34,20 @@ public interface ChatRepository {
     /** Like {@link #postSystemMessage}, into any conversation by its id. Empty if it does not exist. */
     Mono<PostedMessage> postSystemMessageToConversation(String conversationId, Message message);
 
-    /**
-     * Empties a deleted event's group: no member, no message left. The conversation itself stays,
-     * holding the version, so a late and older change cannot bring the group back. Emits the
-     * conversation's id when this call emptied it; empty when it was already closed or newer.
-     */
+    /** Empties a deleted event's group but keeps its version; emits its id only when this call emptied it. */
     Mono<String> closeEventGroup(String eventId, long version);
+
+    /** The conversation without its messages, if {@code userId} takes part in it; empty otherwise. */
+    Mono<ConversationDetail> findMembership(String conversationId, String userId);
+
+    /** Clears the sender name of every stored message and preview {@code userId} wrote; ids, text and photos stay. */
+    Mono<Void> anonymizeSender(String userId);
+
+    /** Marks every private conversation of {@code userId} read-only. */
+    Mono<Void> markDirectConversationsReadOnly(String userId);
+
+    /** Unsets title and organizer on the emptied event groups {@code userId} organized. */
+    Mono<Void> forgetClosedGroupsOrganizedBy(String userId);
 
     Mono<MessageBucket> findBucketByConversationIdAndBucketIndex(String conversationId,
                                                                 Integer bucketIndex,

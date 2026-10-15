@@ -25,66 +25,57 @@ public class ChatService {
 
     private final ChatRepository chatRepository;
     private final MessageBroadcaster messageBroadcaster;
+    private final AccountGuard guard;
     private final Clock clock;
 
-    public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster, Clock clock) {
+    public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster, AccountGuard guard,
+                       Clock clock) {
         this.chatRepository = chatRepository;
         this.messageBroadcaster = messageBroadcaster;
+        this.guard = guard;
         this.clock = clock;
     }
 
-    public Mono<ConversationDetail> readOrCreateConversation(List<String> participantIds) {
-        return chatRepository.findByParticipantIds(participantIds)
-                .switchIfEmpty(Mono.defer(() -> chatRepository.saveWithInitialBucket(participantIds)));
+    /** The private conversation with a friend, created on first use but never for or with a deleted account. */
+    public Mono<ConversationDetail> readOrCreateConversation(String requesterId, String friendId) {
+        List<String> participantIds = List.of(requesterId, friendId);
+        return guard.deletedAmong(participantIds)
+                .flatMap(deleted -> {
+                    if (deleted.contains(requesterId)) {
+                        return Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED));
+                    }
+                    Mono<ConversationDetail> existing = chatRepository.findByParticipantIds(participantIds);
+                    return deleted.contains(friendId)
+                            ? existing.switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                            : existing.switchIfEmpty(Mono.defer(() -> chatRepository.saveWithInitialBucket(participantIds)));
+                });
     }
 
-    /**
-     * Persists a message, then hands a copy to every other member of the conversation.
-     *
-     * <p>The recipients come from the stored conversation, not from the client: the
-     * {@code receiverId} it sends is ignored. Trusting it let a client push a live message to
-     * anyone whose id it knew, and could only ever name one recipient, which a group cannot use.
-     *
-     * <p>That order matters and used to be the other way round: the message was pushed to
-     * the recipient's stream first and written afterwards, so a failed write left the
-     * recipient looking at a message that did not exist. Persistence is the source of
-     * truth, so it goes first — a broadcast that fails costs a live update, not the
-     * message.
-     *
-     * <p>Broadcasting from inside {@code concatMap} keeps the port uncalled until the write has
-     * succeeded. Passing {@code broadcast(message)} straight to {@code then} used to need a
-     * {@code defer}: it is evaluated while the chain is assembled, so the port ran even when the
-     * write failed.
-     *
-     * <p>Returns the stored message: it is the sender's acknowledgement. This used to complete
-     * empty, and rsocket-js resolves a request-response only on a payload, so every message stayed
-     * "sending" on the sender's screen. A sender outside the conversation gets an error for the
-     * same reason: an empty answer would leave the message pending instead of failed.
-     */
+    /** Stores a message, then pushes it to the other members; the stored message is the sender's acknowledgement. */
     public Mono<Message> sendMessage(Message incoming) {
         // Every message gets an id here: a photo is removed by the id of the message that carries it.
         Message message = incoming.id() == null ? new Message(UUID.randomUUID().toString(), incoming.senderId(), incoming.senderName(),
                 incoming.receiverId(), incoming.conversationId(), incoming.content(), incoming.timestamp(), incoming.photo(),
                 incoming.type()) : incoming;
-        return chatRepository.postMessage(message)
+        // A deleted sender, or a conversation made read-only by a deleted participant, writes nothing.
+        return guard.requireActive(message.senderId())
+                .then(Mono.defer(() -> chatRepository.findMembership(message.conversationId(), message.senderId())))
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
-                .flatMapMany(Flux::fromIterable)
-                .filter(memberId -> !memberId.equals(message.senderId()))
+                .flatMap(conversation -> conversation.isReadOnly()
+                        ? Mono.<List<String>>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        : chatRepository.postMessage(message))
+                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                // Recipients come from the stored conversation, never from the client's receiverId.
+                .flatMapMany(memberIds -> liveRecipients(message, memberIds, message.senderId()))
                 .concatMap(recipientId -> messageBroadcaster.broadcast(
                         new LiveMessage(addressedTo(message, recipientId), BroadcastKind.NEW)))
                 .then(Mono.just(message));
     }
 
-    /**
-     * Pushes a changed message to the conversation's members but {@code exceptUserId}, who made the
-     * change and already knows. Members are read as {@code exceptUserId} sees them: nothing is sent
-     * for a conversation they are not in. A recipient whose broadcast fails is skipped: the change
-     * is already stored, and costs that member a reload.
-     */
+    /** Pushes a stored change to the other members of a conversation {@code exceptUserId} belongs to. */
     public Mono<Void> broadcastUpdate(Message message, String exceptUserId) {
         return chatRepository.findById(message.conversationId(), exceptUserId)
-                .flatMapMany(conversation -> Flux.fromIterable(conversation.getParticipantIds()))
-                .filter(memberId -> !memberId.equals(exceptUserId))
+                .flatMapMany(conversation -> liveRecipients(message, conversation.getParticipantIds(), exceptUserId))
                 .concatMap(recipientId -> messageBroadcaster
                         .broadcast(new LiveMessage(addressedTo(message, recipientId), BroadcastKind.UPDATED))
                         .onErrorResume(error -> {
@@ -127,7 +118,7 @@ public class ChatService {
     }
 
     private Mono<Void> pushToMembers(PostedMessage posted) {
-        return Flux.fromIterable(posted.participantIds())
+        return liveRecipients(posted.message(), posted.participantIds(), null)
                 .concatMap(recipientId -> messageBroadcaster
                         .broadcast(new LiveMessage(addressedTo(posted.message(), recipientId), BroadcastKind.NEW))
                         .onErrorResume(error -> {
@@ -136,6 +127,17 @@ public class ChatService {
                             return Mono.empty();
                         }))
                 .then();
+    }
+
+    /** Members but {@code exceptId} and deleted accounts; unreadable markers only skip the live push. */
+    private Flux<String> liveRecipients(Message message, List<String> memberIds, String exceptId) {
+        List<String> others = memberIds.stream().filter(memberId -> !memberId.equals(exceptId)).toList();
+        return guard.deletedAmong(others)
+                .flatMapMany(deleted -> Flux.fromIterable(others).filter(memberId -> !deleted.contains(memberId)))
+                .onErrorResume(error -> {
+                    LOG.log(System.Logger.Level.WARNING, "Message {0} not pushed: {1}", message.id(), error.toString());
+                    return Flux.empty();
+                });
     }
 
     private static String noticeId(String eventId, String content) {

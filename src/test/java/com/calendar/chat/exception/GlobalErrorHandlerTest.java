@@ -33,6 +33,21 @@ class GlobalErrorHandlerTest {
             return Mono.error(new IllegalStateException("mongodb://admin:hunter2@host/events"));
         }
 
+        @GetMapping("/account-deleted")
+        Mono<Void> accountDeleted() {
+            return Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED));
+        }
+
+        @GetMapping("/read-only")
+        Mono<Void> readOnly() {
+            return Mono.error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY));
+        }
+
+        @GetMapping("/store-down")
+        Mono<Void> storeDown() {
+            return Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE));
+        }
+
         @GetMapping("/gone")
         Mono<Void> gone() {
             return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -123,4 +138,33 @@ class GlobalErrorHandlerTest {
                 .jsonPath("$.code").isEqualTo("CHT-REQ-000");
     }
 
+    @Test
+    @DisplayName("a deleted account answers 410, so the client knows retrying cannot help")
+    void handleChatException_shouldAnswer410WithItsCode_forAccountDeleted() {
+        client.get().uri("/account-deleted")
+                .exchange()
+                .expectStatus().isEqualTo(410)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHT-BUS-011")
+                .jsonPath("$.title").isEqualTo("Account deleted");
+    }
+
+    @Test
+    void handleChatException_shouldAnswer409WithItsCode_forReadOnlyConversation() {
+        client.get().uri("/read-only")
+                .exchange()
+                .expectStatus().isEqualTo(409)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHT-BUS-012");
+    }
+
+    @Test
+    @DisplayName("a store that cannot be reached is a dependency down, 502, not a fault of ours")
+    void handleChatException_shouldAnswer502WithItsCode_forStoreUnavailable() {
+        client.get().uri("/store-down")
+                .exchange()
+                .expectStatus().isEqualTo(502)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHT-TEC-004");
+    }
 }

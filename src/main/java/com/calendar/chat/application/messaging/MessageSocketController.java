@@ -5,6 +5,7 @@ import com.calendar.chat.application.dtos.LiveMessageDTO;
 import com.calendar.chat.application.mappers.LiveMessageMapper;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.services.PresenceService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -22,13 +23,15 @@ public class MessageSocketController {
     private final ChatService chatService;
     private final PresenceService presenceService;
     private final PhotoService photoService;
+    private final LiveSessions liveSessions;
     private final LiveMessageMapper liveMessageMapper;
 
     public MessageSocketController(ChatService chatService, PresenceService presenceService, PhotoService photoService,
-                                   LiveMessageMapper liveMessageMapper) {
+                                   LiveSessions liveSessions, LiveMessageMapper liveMessageMapper) {
         this.chatService = chatService;
         this.presenceService = presenceService;
         this.photoService = photoService;
+        this.liveSessions = liveSessions;
         this.liveMessageMapper = liveMessageMapper;
     }
 
@@ -47,10 +50,10 @@ public class MessageSocketController {
     public Flux<LiveMessageDTO> streamMessage(@AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getClaimAsString("businessId");
 
-        // The user counts as online for as long as this stream is open.
+        // The user counts as online for as long as this stream is open; deleting the account ends it.
         // A photo's URL is signed here, by the pod that delivers it: it never travels on the broker.
-        return presenceService.track(userId, chatService.streamMessages(userId)
+        return liveSessions.attach(userId, presenceService.track(userId, chatService.streamMessages(userId)
                 .concatMap(photoService::signed)
-                .map(liveMessageMapper::toDTO));
+                .map(liveMessageMapper::toDTO)));
     }
 }

@@ -39,6 +39,8 @@ public class CloudflareRealtimeAdapter implements MediaRelay {
     static final String TRACKS_UPDATE = "/apps/{appId}/sessions/{sessionId}/tracks/update";
     static final String TRACKS_CLOSE = "/apps/{appId}/sessions/{sessionId}/tracks/close";
     static final String RENEGOTIATE = "/apps/{appId}/sessions/{sessionId}/renegotiate";
+    static final String SESSION = "/apps/{appId}/sessions/{sessionId}";
+    static final String INACTIVE = "inactive";
 
     private final WebClient client;
     private final String appId;
@@ -98,6 +100,17 @@ public class CloudflareRealtimeAdapter implements MediaRelay {
     public Mono<Void> closeTracks(String sessionId, List<String> mids) {
         return exchange(HttpMethod.PUT, TRACKS_CLOSE, sessionId,
                 new RealtimeCloseRequest(mids.stream().map(mapper::toClosing).toList(), true)).then();
+    }
+
+    /** Realtime has no session close: every track the session still has open is closed instead. */
+    @Override
+    public Mono<Void> closeSession(String sessionId) {
+        return exchange(HttpMethod.GET, SESSION, sessionId, null)
+                .map(session -> session.tracks() == null ? List.<String>of() : session.tracks().stream()
+                        .filter(track -> track.mid() != null && !INACTIVE.equals(track.status()))
+                        .map(RealtimeTrackResult::mid)
+                        .toList())
+                .flatMap(mids -> mids.isEmpty() ? Mono.<Void>empty() : closeTracks(sessionId, mids));
     }
 
     private Mono<RealtimeResponse> exchange(HttpMethod method, String path, String sessionId, Object body) {

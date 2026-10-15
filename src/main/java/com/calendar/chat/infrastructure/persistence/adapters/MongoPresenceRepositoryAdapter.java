@@ -6,6 +6,7 @@ import com.calendar.chat.infrastructure.persistence.models.entities.LastSeenEnti
 import com.calendar.chat.infrastructure.persistence.models.entities.PresenceConnectionEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.LastSeenRepository;
 import com.calendar.chat.infrastructure.persistence.repositories.PresenceConnectionRepository;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -56,5 +57,12 @@ public class MongoPresenceRepositoryAdapter implements PresenceRepository {
                         lastSeenRepository.findById(userId).map(seen -> Optional.of(seen.getLastSeenAt()))
                                 .defaultIfEmpty(Optional.empty()))
                 .map(found -> new Presence(userId, found.getT1(), found.getT2().orElse(null)));
+    }
+
+    @Override
+    public Mono<Void> forget(String userId) {
+        return connectionRepository.deleteByUserId(userId)
+                .then(Mono.defer(() -> lastSeenRepository.deleteById(userId)))
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable);
     }
 }

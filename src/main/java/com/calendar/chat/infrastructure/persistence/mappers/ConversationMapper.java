@@ -36,11 +36,13 @@ public interface ConversationMapper {
     @Mapping(target = "organizerId", ignore = true)
     ConversationEntity toConversationEntity(ConversationSummary conversationSummary);
 
-    // A conversation stored before groups existed has no type: it is a private one.
+    // A missing type means a private conversation; a missing readOnly flag means writable.
     @Mapping(target = "type", source = "type", defaultValue = "DIRECT")
+    @Mapping(target = "readOnly", source = "readOnly", defaultValue = "false")
     ConversationSummary toConversationSummary(ConversationEntity conversationEntity);
 
     @Mapping(target = "type", source = "type", defaultValue = "DIRECT")
+    @Mapping(target = "readOnly", source = "readOnly", defaultValue = "false")
     @Mapping(target = "messages", ignore = true)
     @Mapping(target = "bucketIndex", ignore = true)
     ConversationDetail toConversationDetail(ConversationEntity conversationEntity);

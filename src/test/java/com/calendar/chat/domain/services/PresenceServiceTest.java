@@ -3,10 +3,12 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.Presence;
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -20,6 +22,7 @@ import reactor.test.publisher.TestPublisher;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -42,12 +45,25 @@ class PresenceServiceTest {
     private PresenceRepository presenceRepository;
     @Mock
     private ChatRepository chatRepository;
+    @Mock
+    private DeletedUserMarkers markers;
 
     private PresenceService service;
 
     @BeforeEach
     void setUp() {
-        service = new PresenceService(presenceRepository, chatRepository, "pod-1", Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new PresenceService(presenceRepository, chatRepository, new AccountGuard(markers), "pod-1",
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        // Nobody is deleted unless a test says so.
+        lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
+        lenient().when(markers.findDeletedAmong(any())).thenReturn(Flux.empty());
+    }
+
+    private void deleted(String... userIds) {
+        lenient().when(markers.isDeleted(anyString()))
+                .thenAnswer(call -> Mono.just(List.of(userIds).contains(call.<String>getArgument(0))));
+        lenient().when(markers.findDeletedAmong(any())).thenAnswer(call -> Flux.fromIterable(call.<Collection<String>>getArgument(0))
+                .filter(List.of(userIds)::contains));
     }
 
     private void connectionsSucceed() {
@@ -108,6 +124,17 @@ class PresenceServiceTest {
     }
 
     @Test
+    @DisplayName("a stream refused before it is subscribed leaves nothing for the heartbeat to refresh")
+    void track_shouldRegisterNoConnection_untilSubscribed() {
+        service.track("alice", Flux.just("a"));
+
+        assertThat(service.localConnectionCount()).isZero();
+        StepVerifier.create(service.heartbeat()).verifyComplete();
+        verify(presenceRepository, never()).connect(anyString(), anyString(), anyString(), any());
+        verify(presenceRepository, never()).refresh(any(), any());
+    }
+
+    @Test
     void heartbeat_shouldDoNothing_withoutOpenConnections() {
         StepVerifier.create(service.heartbeat()).verifyComplete();
 
@@ -129,6 +156,63 @@ class PresenceServiceTest {
         ArgumentCaptor<Map<String, String>> refreshed = ArgumentCaptor.forClass(Map.class);
         verify(presenceRepository).refresh(refreshed.capture(), eq(NOW));
         assertThat(refreshed.getValue().values()).containsExactlyInAnyOrder("alice", "bob");
+    }
+
+    @Test
+    @DisplayName("an open stream of a deleted account does not bring its last-seen time back")
+    void heartbeat_shouldNotRefreshTheConnectionsOfDeletedUsers() {
+        connectionsSucceed();
+        when(presenceRepository.refresh(any(), any())).thenReturn(Mono.empty());
+        service.track("alice", TestPublisher.<String>create().flux()).subscribe();
+        service.track("bob", TestPublisher.<String>create().flux()).subscribe();
+        deleted("bob");
+
+        StepVerifier.create(service.heartbeat()).verifyComplete();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> refreshed = ArgumentCaptor.forClass(Map.class);
+        verify(presenceRepository).refresh(refreshed.capture(), eq(NOW));
+        assertThat(refreshed.getValue().values()).containsExactly("alice");
+    }
+
+    @Test
+    void heartbeat_shouldWriteNothing_whenEveryConnectedUserIsDeleted() {
+        connectionsSucceed();
+        service.track("bob", TestPublisher.<String>create().flux()).subscribe();
+        deleted("bob");
+
+        StepVerifier.create(service.heartbeat()).verifyComplete();
+
+        verify(presenceRepository, never()).refresh(any(), any());
+    }
+
+    @Test
+    @DisplayName("a stream closing after the account was deleted forgets the presence instead of recording it")
+    void track_shouldForgetThePresence_insteadOfRecordingLastSeen_whenTheUserIsDeletedAtClose() {
+        when(presenceRepository.connect(anyString(), anyString(), anyString(), any())).thenReturn(Mono.empty());
+        when(presenceRepository.forget("bob")).thenReturn(Mono.empty());
+        TestPublisher<String> stream = TestPublisher.create();
+
+        StepVerifier.create(service.track("bob", stream.flux()))
+                .then(() -> deleted("bob"))
+                .then(stream::complete)
+                .verifyComplete();
+
+        verify(presenceRepository).forget("bob");
+        verify(presenceRepository, never()).disconnect(anyString(), anyString(), any());
+        assertThat(service.localConnectionCount()).isZero();
+    }
+
+    @Test
+    void getPresence_shouldAnswerOfflineWithoutLastSeen_whenTheUserIsDeleted() {
+        when(chatRepository.findByParticipantIds(List.of("alice", "bob")))
+                .thenReturn(Mono.just(mock(ConversationDetail.class)));
+        deleted("bob");
+
+        StepVerifier.create(service.getPresence("alice", "bob"))
+                .expectNext(new Presence("bob", false, null))
+                .verifyComplete();
+        verify(presenceRepository, never()).find(any(), any());
     }
 
     @Test

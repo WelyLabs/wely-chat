@@ -14,6 +14,7 @@ import com.calendar.chat.infrastructure.persistence.models.entities.Conversation
 import com.calendar.chat.infrastructure.persistence.models.entities.MessageBucketEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.ConversationRepository;
 import com.calendar.chat.infrastructure.persistence.repositories.MessageBucketRepository;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -271,7 +272,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .flatMap(none -> conversationRepository.insert(new ConversationEntity(
                         null, group.memberIds(), null, Instant.now(),
                         ConversationType.EVENT.name(), group.eventId(), group.title(), group.version(),
-                        group.organizerId())))
+                        group.organizerId(), null)))
                 .onErrorResume(DuplicateKeyException.class, stale -> Mono.empty())
                 .then();
     }
@@ -288,7 +289,7 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                                 .flatMap(conversation -> messageBucketRepository.deleteByConversationId(conversation.getId())
                                         .thenReturn(conversation.getId()))
                         : conversationRepository.insert(new ConversationEntity(null, List.of(), null, Instant.now(),
-                                        ConversationType.EVENT.name(), eventId, null, version, null))
+                                        ConversationType.EVENT.name(), eventId, null, version, null, null))
                                 .onErrorResume(DuplicateKeyException.class, newer -> Mono.empty())
                                 .then(Mono.empty()));
     }
@@ -309,5 +310,36 @@ public class MongoChatRepositoryAdapter implements ChatRepository {
                 .filter(message -> messageId.equals(message.messageId()))
                 .next()
                 .map(conversationMapper::toMessage);
+    }
+
+    /** The membership check runs in the query; no bucket is read. */
+    @Override
+    public Mono<ConversationDetail> findMembership(String conversationId, String userId) {
+        return conversationRepository.findByIdAndParticipantIdsContaining(conversationId, userId)
+                .map(conversationMapper::toConversationDetail)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable);
+    }
+
+    /** Buckets first, then the previews: a crash in between is repaired by running it again. */
+    @Override
+    public Mono<Void> anonymizeSender(String userId) {
+        return messageBucketRepository.clearSenderName(userId)
+                .then(Mono.defer(() -> conversationRepository.clearLastSenderName(userId)))
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable)
+                .then();
+    }
+
+    @Override
+    public Mono<Void> markDirectConversationsReadOnly(String userId) {
+        return conversationRepository.markDirectReadOnly(userId)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable)
+                .then();
+    }
+
+    @Override
+    public Mono<Void> forgetClosedGroupsOrganizedBy(String userId) {
+        return conversationRepository.forgetClosedGroupsOrganizedBy(userId)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable)
+                .then();
     }
 }

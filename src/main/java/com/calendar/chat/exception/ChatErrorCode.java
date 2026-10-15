@@ -83,6 +83,20 @@ public enum ChatErrorCode {
             "Only the tracks published by participants of this call can be received.",
             HttpStatus.FORBIDDEN),
 
+    /** The caller's account is deleted: their token may still be valid for a few minutes, their writes are not. */
+    ACCOUNT_DELETED(
+            "CHT-BUS-011",
+            "Account deleted",
+            "This account has been deleted.",
+            HttpStatus.GONE),
+
+    /** A private conversation whose other participant deleted their account stays readable, not writable. */
+    CONVERSATION_READ_ONLY(
+            "CHT-BUS-012",
+            "Conversation read-only",
+            "The other participant deleted their account: this conversation can be read, not written to.",
+            HttpStatus.CONFLICT),
+
     MEDIA_UNAVAILABLE(
             "CHT-TEC-001",
             "Photo storage unavailable",
@@ -93,6 +107,13 @@ public enum ChatErrorCode {
             "CHT-TEC-002",
             "Calls unavailable",
             "The call service could not be reached; try again shortly.",
+            HttpStatus.BAD_GATEWAY),
+
+    // CHT-TEC-003 is reserved for USERS_UNAVAILABLE, the user directory read by reconciliation.
+    STORE_UNAVAILABLE(
+            "CHT-TEC-004",
+            "Message store unavailable",
+            "The message store could not be reached; try again shortly.",
             HttpStatus.BAD_GATEWAY);
 
     private final String code;

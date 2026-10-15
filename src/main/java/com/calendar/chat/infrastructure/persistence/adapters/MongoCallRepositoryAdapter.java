@@ -6,6 +6,7 @@ import com.calendar.chat.domain.models.CallStatus;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.infrastructure.persistence.mappers.CallPersistenceMapper;
 import com.calendar.chat.infrastructure.persistence.repositories.CallMongoRepository;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -93,6 +94,20 @@ public class MongoCallRepositoryAdapter implements CallRepository {
     @Override
     public Flux<Call> findLiveStartedBefore(Instant startedBefore) {
         return repository.findLiveStartedBefore(startedBefore).map(mapper::toDomain);
+    }
+
+    @Override
+    public Flux<Call> findLiveInvolving(String userId) {
+        return repository.findLiveInvolving(userId)
+                .map(mapper::toDomain)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable);
+    }
+
+    @Override
+    public Mono<Void> removeFromEndedCalls(String userId) {
+        return repository.pullFromEnded(userId)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable)
+                .then();
     }
 
     private Mono<Call> readIfChanged(String callId, long changed) {

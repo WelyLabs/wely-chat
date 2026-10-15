@@ -23,14 +23,17 @@ import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
@@ -49,6 +52,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -77,13 +81,17 @@ class CallServiceTest {
     private ChatService chatService;
     @Mock
     private CallNoticeFormatter noticeFormatter;
+    @Mock
+    private DeletedUserMarkers markers;
 
     private CallService service;
 
     @BeforeEach
     void setUp() {
         service = new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
-                chatService, noticeFormatter, MAX_PARTICIPANTS, Clock.fixed(NOW, ZoneOffset.UTC));
+                chatService, noticeFormatter, new AccountGuard(markers), MAX_PARTICIPANTS,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
         lenient().when(callBroadcaster.broadcast(any())).thenReturn(Mono.empty());
         lenient().when(noticeFormatter.format(any())).thenReturn("📞 Call");
         lenient().when(chatService.postConversationNotice(anyString(), anyString(), anyString()))
@@ -172,6 +180,30 @@ class CallServiceTest {
         verifyNoInteractions(callRepository);
     }
 
+    @Test
+    void start_shouldRefuseWithAccountDeleted_whenTheCallerIsDeleted() {
+        when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+
+        verifyNoInteractions(chatRepository, callRepository, callBroadcaster);
+    }
+
+    @Test
+    void start_shouldRefuseWithReadOnly_inAReadOnlyConversation() {
+        ConversationDetail readOnly = new ConversationDetail("conv-1", List.of("alice", "bob"), ConversationType.DIRECT,
+                List.of(), 0, null, null, null, true);
+        when(chatRepository.findById("conv-1", "alice")).thenReturn(Mono.just(readOnly));
+
+        StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.CONVERSATION_READ_ONLY));
+
+        verifyNoInteractions(callRepository, callBroadcaster);
+    }
+
     // --- liveCall ------------------------------------------------------------------------
 
     @Test
@@ -217,6 +249,17 @@ class CallServiceTest {
         assertThat(added.getValue()).isEqualTo(new CallParticipant("bob", "session-bob", NOW, NOW, List.of()));
         assertThat(broadcastEvents(1)).singleElement()
                 .isEqualTo(new CallEvent(CallEventType.PARTICIPANT_JOINED, "alice", "bob", active));
+    }
+
+    @Test
+    void join_shouldRefuseWithAccountDeleted_withoutOpeningASession_whenTheCallerIsDeleted() {
+        when(markers.isDeleted("bob")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.join("bob", "call-1"))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+
+        verifyNoInteractions(callRepository, mediaRelay, callBroadcaster);
     }
 
     @Test
@@ -537,6 +580,198 @@ class CallServiceTest {
         verifyNoInteractions(callBroadcaster);
     }
 
+    // --- removeUser ----------------------------------------------------------------------
+
+    /** Bob deleted his account: every live call that involves him is found, ended calls are stripped of him. */
+    private void bobIsIn(Call... live) {
+        when(callRepository.findLiveInvolving("bob")).thenReturn(Flux.just(live));
+        when(callRepository.removeFromEndedCalls("bob")).thenReturn(Mono.empty());
+    }
+
+    @Test
+    void removeUser_shouldLeaveEveryLiveCallTheUserIsIn_andTellThoseStillIn() {
+        bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), in("alice"), in("bob"), in("carol")));
+        when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
+        when(callRepository.removeParticipant("call-1", "bob")).thenReturn(Mono.just(
+                call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), in("alice"), in("carol"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository, never()).end(anyString(), any(), any());
+        assertThat(broadcastEvents(2)).extracting(CallEvent::type, CallEvent::recipientId, CallEvent::actorId)
+                .containsExactly(
+                        tuple(CallEventType.PARTICIPANT_LEFT, "alice", "bob"),
+                        tuple(CallEventType.PARTICIPANT_LEFT, "carol", "bob"));
+    }
+
+    @Test
+    @DisplayName("the user is taken out before its relay session closes: a device still connected cannot reopen tracks")
+    void removeUser_shouldCloseTheRelaySession_afterLeaving() {
+        bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob")));
+        when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        InOrder order = inOrder(mediaRelay, callRepository);
+        order.verify(callRepository).removeParticipant("call-1", "bob");
+        order.verify(mediaRelay).closeSession("session-bob");
+    }
+
+    @Test
+    @DisplayName("a participant that cannot be taken out fails the erasure, which runs again; its session is left for then")
+    void removeUser_shouldFail_withoutClosingTheSession_whenTheUserCannotBeTakenOut() {
+        when(callRepository.findLiveInvolving("bob")).thenReturn(Flux.just(
+                call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob"))));
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(service.removeUser("bob"))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.STORE_UNAVAILABLE));
+
+        verifyNoInteractions(mediaRelay);
+        verify(callRepository, never()).removeFromEndedCalls(anyString());
+    }
+
+    @Test
+    void removeUser_shouldStillLeave_whenTheRelayCannotBeReached() {
+        bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob")));
+        when(mediaRelay.closeSession("session-bob"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CALLS_UNAVAILABLE)));
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).removeParticipant("call-1", "bob");
+        verify(callRepository).removeFromEndedCalls("bob");
+    }
+
+    @Test
+    void removeUser_shouldEndTheCall_whenTheUserWasTheLastOneIn() {
+        bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("bob")));
+        when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"))));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
+    }
+
+    @Test
+    @DisplayName("a call the deleted user rang alone ends ENDED: MISSED would notify a missed call from them")
+    void removeUser_shouldEndARingingCallTheUserWasAloneIn_withoutEmittingMissed() {
+        Call rangByBob = new Call("call-1", "conv-1", "bob", CallMedia.AUDIO, CallStatus.RINGING, NOW, null,
+                List.of("alice", "bob"), List.of(in("bob")));
+        bobIsIn(rangByBob);
+        when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
+        when(callRepository.removeParticipant("call-1", "bob")).thenReturn(Mono.just(new Call("call-1", "conv-1", "bob",
+                CallMedia.AUDIO, CallStatus.RINGING, NOW, null, List.of("alice", "bob"), List.of())));
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
+        verify(callRepository, never()).end(anyString(), eq(CallStatus.MISSED), any());
+    }
+
+    @Test
+    void removeUser_shouldEndARingingCallTheUserStartedButNeverJoined_withoutEmittingMissed() {
+        Call rangByBob = new Call("call-1", "conv-1", "bob", CallMedia.VIDEO, CallStatus.RINGING, NOW, null,
+                List.of("alice", "bob"), List.of());
+        bobIsIn(rangByBob);
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
+        verify(callRepository, never()).end(anyString(), eq(CallStatus.MISSED), any());
+        verify(callRepository, never()).removeParticipant(anyString(), anyString());
+        verifyNoInteractions(mediaRelay);
+    }
+
+    @Test
+    @DisplayName("a private call still ringing the deleted callee stops ringing, ENDED rather than MISSED")
+    void removeUser_shouldEndARingingDirectCallToTheUser_withoutEmittingMissed() {
+        Call ringingBob = call(CallStatus.RINGING, List.of("alice", "bob"), in("alice"));
+        bobIsIn(ringingBob);
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW))
+                .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
+        verify(callRepository, never()).end(anyString(), eq(CallStatus.MISSED), any());
+        verify(callRepository, never()).removeParticipant(anyString(), anyString());
+        verifyNoInteractions(mediaRelay);
+    }
+
+    @Test
+    @DisplayName("a group call ringing the deleted member goes on ringing the others")
+    void removeUser_shouldLeaveARingingGroupCallTheUserIsOnlyRungIn() {
+        bobIsIn(call(CallStatus.RINGING, List.of("alice", "bob", "carol"), in("alice")));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository, never()).end(anyString(), any(), any());
+        verifyNoInteractions(callBroadcaster, mediaRelay);
+    }
+
+    @Test
+    @DisplayName("a call the user started and has already left goes on for the others")
+    void removeUser_shouldLeaveAnActiveCallTheUserStartedButLeftAlone() {
+        Call startedByBob = new Call("call-1", "conv-1", "bob", CallMedia.AUDIO, CallStatus.ACTIVE, NOW, null,
+                List.of("alice", "bob", "carol"), List.of(in("alice"), in("carol")));
+        bobIsIn(startedByBob);
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository, never()).end(anyString(), any(), any());
+        verify(callRepository, never()).removeParticipant(anyString(), anyString());
+        verifyNoInteractions(callBroadcaster, mediaRelay);
+    }
+
+    @Test
+    void removeUser_shouldStripTheUserFromEndedCalls_afterLeavingLiveOnes() {
+        bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob")));
+        when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
+        when(callRepository.removeParticipant("call-1", "bob"))
+                .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"))));
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        InOrder order = inOrder(callRepository);
+        order.verify(callRepository).removeParticipant("call-1", "bob");
+        order.verify(callRepository).removeFromEndedCalls("bob");
+    }
+
+    @Test
+    void removeUser_shouldDoNothing_whenTheUserIsInNoCall() {
+        bobIsIn();
+
+        StepVerifier.create(service.removeUser("bob")).verifyComplete();
+
+        verify(callRepository).removeFromEndedCalls("bob");
+        verifyNoInteractions(callBroadcaster, mediaRelay);
+    }
+
+    @Test
+    void removeUser_shouldFail_whenTheCallsCannotBeRead() {
+        when(callRepository.findLiveInvolving("bob"))
+                .thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+
+        StepVerifier.create(service.removeUser("bob")).expectError(ChatException.class).verify();
+
+        verify(callRepository, never()).removeFromEndedCalls(anyString());
+    }
+
     // --- decline -------------------------------------------------------------------------
 
     @Test
@@ -563,6 +798,17 @@ class CallServiceTest {
         verify(callRepository, never()).end(anyString(), any(), any());
         assertThat(broadcastEvents(1)).singleElement()
                 .isEqualTo(new CallEvent(CallEventType.DECLINED, "alice", "bob", ringing));
+    }
+
+    @Test
+    void decline_shouldRefuseWithAccountDeleted_whenTheCallerIsDeleted() {
+        when(markers.isDeleted("bob")).thenReturn(Mono.just(true));
+
+        StepVerifier.create(service.decline("bob", "call-1"))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+
+        verifyNoInteractions(callRepository, chatRepository, callBroadcaster, chatService);
     }
 
     @Test

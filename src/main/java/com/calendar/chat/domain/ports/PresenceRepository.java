@@ -23,4 +23,7 @@ public interface PresenceRepository {
 
     /** The user's presence: online if a connection was refreshed after {@code aliveSince}. */
     Mono<Presence> find(String userId, Instant aliveSince);
+
+    /** Deletes every connection and the last-seen time of a user. */
+    Mono<Void> forget(String userId);
 }

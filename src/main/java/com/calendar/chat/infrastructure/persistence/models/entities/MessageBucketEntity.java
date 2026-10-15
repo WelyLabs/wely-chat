@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.List;
@@ -21,9 +22,13 @@ import java.util.List;
  * loses with a duplicate key and retries against the bucket the winner created.
  */
 @Document(collection = "message_buckets")
-@CompoundIndex(name = "conversation_bucket_unique",
-               def = "{'conversationId': 1, 'bucketIndex': -1}",
-               unique = true)
+@CompoundIndexes({
+        @CompoundIndex(name = "conversation_bucket_unique",
+                       def = "{'conversationId': 1, 'bucketIndex': -1}",
+                       unique = true),
+        // Multikey: finds a deleted account's messages without scanning every bucket.
+        @CompoundIndex(name = "messages_sender", def = "{'messages.s_id': 1}")
+})
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter

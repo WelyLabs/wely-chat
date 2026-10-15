@@ -3,14 +3,18 @@ package com.calendar.chat.configuration;
 import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
+import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
+import com.calendar.chat.domain.services.AccountErasureService;
+import com.calendar.chat.domain.services.AccountGuard;
 import com.calendar.chat.domain.services.CallService;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.EventGroupService;
+import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.ports.MediaStore;
@@ -31,15 +35,27 @@ import java.time.Clock;
 public class ChatApplicationConfig {
 
     @Bean
+    public AccountGuard accountGuard(DeletedUserMarkers markers) {
+        return new AccountGuard(markers);
+    }
+
+    @Bean
+    public LiveSessions liveSessions(AccountGuard accountGuard) {
+        return new LiveSessions(accountGuard);
+    }
+
+    @Bean
     public ChatService chatService(ChatRepository chatRepository,
-                                  MessageBroadcaster messageBroadcaster) {
-        return new ChatService(chatRepository, messageBroadcaster, Clock.systemUTC());
+                                  MessageBroadcaster messageBroadcaster,
+                                  AccountGuard accountGuard) {
+        return new ChatService(chatRepository, messageBroadcaster, accountGuard, Clock.systemUTC());
     }
 
     @Bean
     public PhotoService photoService(ChatRepository chatRepository, ConversationPhotoRepository photoRepository,
-                                     MediaStore mediaStore, ChatService chatService) {
-        return new PhotoService(chatRepository, photoRepository, mediaStore, chatService, Clock.systemUTC());
+                                     MediaStore mediaStore, ChatService chatService, AccountGuard accountGuard) {
+        return new PhotoService(chatRepository, photoRepository, mediaStore, chatService, accountGuard,
+                Clock.systemUTC());
     }
 
     @Bean
@@ -50,16 +66,26 @@ public class ChatApplicationConfig {
     /** The instance id is the broadcast one: each pod's own, which its connections carry. */
     @Bean
     public PresenceService presenceService(PresenceRepository presenceRepository, ChatRepository chatRepository,
+                                          AccountGuard accountGuard,
                                           @Value("${chat.broadcast.instance-id}") String instanceId) {
-        return new PresenceService(presenceRepository, chatRepository, instanceId, Clock.systemUTC());
+        return new PresenceService(presenceRepository, chatRepository, accountGuard, instanceId, Clock.systemUTC());
     }
 
     @Bean
     public CallService callService(CallRepository callRepository, ChatRepository chatRepository, MediaRelay mediaRelay,
                                    IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster,
                                    ChatService chatService, CallNoticeFormatter noticeFormatter,
+                                   AccountGuard accountGuard,
                                    @Value("${app.calls.max-participants}") int maxParticipants) {
         return new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
-                chatService, noticeFormatter, maxParticipants, Clock.systemUTC());
+                chatService, noticeFormatter, accountGuard, maxParticipants, Clock.systemUTC());
+    }
+
+    @Bean
+    public AccountErasureService accountErasureService(DeletedUserMarkers markers, ChatRepository chatRepository,
+                                                       PresenceRepository presenceRepository, CallService callService,
+                                                       LiveSessions liveSessions) {
+        return new AccountErasureService(markers, chatRepository, presenceRepository, callService, liveSessions,
+                Clock.systemUTC());
     }
 }
