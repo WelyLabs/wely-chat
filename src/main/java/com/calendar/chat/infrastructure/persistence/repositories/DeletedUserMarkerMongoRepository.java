@@ -21,4 +21,8 @@ public interface DeletedUserMarkerMongoRepository extends ReactiveMongoRepositor
     /** The markers among these ids, projected to the id. */
     @Query(value = "{ '_id': { '$in': ?0 } }", fields = "{ '_id': 1 }")
     Flux<DeletedUserMarkerEntity> findIdsIn(Collection<String> userIds);
+
+    /** The markers among these ids whose erasure has run, projected to the id. */
+    @Query(value = "{ '_id': { '$in': ?0 }, 'erasedAt': { '$ne': null } }", fields = "{ '_id': 1 }")
+    Flux<DeletedUserMarkerEntity> findErasedIdsIn(Collection<String> userIds);
 }

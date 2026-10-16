@@ -19,6 +19,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,5 +88,20 @@ class MongoDeletedUserMarkersAdapterIntegrationTest {
                 .expectNext(new DeletedUserMarker("alice", FIRST, null))
                 .verifyComplete();
         StepVerifier.create(adapter.find("bob")).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("only markers whose erasure ran are listed: none, or one still owed, means reconciliation erases")
+    void erasedAmong_shouldReturnOnlyIdsWithErasedAt() {
+        adapter.markDeleted("alice", FIRST).block();
+        adapter.markErased("alice", ERASED).block();
+        adapter.markDeleted("carol", FIRST).block();
+        adapter.markDeleted("dave", FIRST).block();
+        adapter.markErased("dave", ERASED).block();
+
+        StepVerifier.create(adapter.erasedAmong(List.of("alice", "bob", "carol")))
+                .expectNext(Set.of("alice"))
+                .verifyComplete();
+        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).verifyComplete();
     }
 }

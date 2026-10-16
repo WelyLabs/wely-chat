@@ -16,12 +16,15 @@ import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.PresenceService;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.ports.DeletedUsersSource;
 import com.calendar.chat.domain.services.AccountErasureService;
 import com.calendar.chat.domain.services.AccountGuard;
 import com.calendar.chat.domain.services.LiveSessions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
+
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -118,6 +121,17 @@ class ChatApplicationConfigTest {
 
         assertThat(service).isNotNull();
         verifyNoInteractions(markers, chats, presence);
+    }
+
+    @Test
+    void accountReconciliationService_shouldBuildTheDomainServiceFromItsPorts_withoutTouchingThem() {
+        DeletedUsersSource source = mock(DeletedUsersSource.class);
+        DeletedUserMarkers markers = mock(DeletedUserMarkers.class);
+        AccountErasureService erasure = mock(AccountErasureService.class);
+
+        assertThat(config.accountReconciliationService(source, markers, erasure, Duration.ofHours(48), 500))
+                .isNotNull();
+        verifyNoInteractions(source, markers, erasure);
     }
 
     @Test

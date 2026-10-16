@@ -22,10 +22,12 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -153,6 +155,29 @@ class MongoDeletedUserMarkersAdapterTest {
         when(repository.findIdsIn(List.of("alice"))).thenReturn(Flux.error(mongoDown()));
 
         StepVerifier.create(adapter.findDeletedAmong(List.of("alice")))
+                .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
+                .verify();
+    }
+
+    @Test
+    void erasedAmong_shouldReturnTheIdsWhoseErasureRan() {
+        when(repository.findErasedIdsIn(List.of("alice", "bob"))).thenReturn(Flux.just(new DeletedUserMarkerEntity("alice", null, null)));
+
+        StepVerifier.create(adapter.erasedAmong(List.of("alice", "bob"))).expectNext(Set.of("alice")).verifyComplete();
+    }
+
+    @Test
+    void erasedAmong_shouldNotQuery_whenNoIdIsGiven() {
+        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).verifyComplete();
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void erasedAmong_shouldTranslateAStoreFailure() {
+        when(repository.findErasedIdsIn(List.of("alice"))).thenReturn(Flux.error(mongoDown()));
+
+        StepVerifier.create(adapter.erasedAmong(List.of("alice")))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
                 .verify();
     }

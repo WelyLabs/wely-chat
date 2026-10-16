@@ -13,6 +13,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** The markers in MongoDB's deleted_users; every failure but the expected duplicate becomes STORE_UNAVAILABLE. */
 @Component
@@ -59,6 +61,17 @@ public class MongoDeletedUserMarkersAdapter implements DeletedUserMarkers {
     public Flux<String> findDeletedAmong(Collection<String> userIds) {
         return repository.findIdsIn(userIds)
                 .map(DeletedUserMarkerEntity::getId)
+                .onErrorMap(DataAccessException.class, StoreErrors::unavailable);
+    }
+
+    @Override
+    public Mono<Set<String>> erasedAmong(Collection<String> userIds) {
+        if (userIds.isEmpty()) {
+            return Mono.just(Set.of());
+        }
+        return repository.findErasedIdsIn(userIds)
+                .map(DeletedUserMarkerEntity::getId)
+                .collect(Collectors.toUnmodifiableSet())
                 .onErrorMap(DataAccessException.class, StoreErrors::unavailable);
     }
 }
