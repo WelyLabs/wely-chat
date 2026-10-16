@@ -4,6 +4,7 @@ import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.ports.DeletedUsersSource;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
 import com.calendar.chat.domain.services.AccountErasureService;
@@ -13,6 +14,7 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.domain.services.AccountReconciliationService;
 import com.calendar.chat.domain.services.EventGroupService;
 import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PhotoService;
@@ -25,6 +27,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRepositories;
 
 import java.time.Clock;
+import java.time.Duration;
 
 /**
  * Wires the chat domain service by hand so the domain layer carries no Spring
@@ -87,5 +90,14 @@ public class ChatApplicationConfig {
                                                        LiveSessions liveSessions) {
         return new AccountErasureService(markers, chatRepository, presenceRepository, callService, liveSessions,
                 Clock.systemUTC());
+    }
+
+    @Bean
+    public AccountReconciliationService accountReconciliationService(
+            DeletedUsersSource source, DeletedUserMarkers markers, AccountErasureService accountErasureService,
+            @Value("${app.account-erasure.reconciliation.recent-window:48h}") Duration recentWindow,
+            @Value("${app.account-erasure.reconciliation.page-size:500}") int pageSize) {
+        return new AccountReconciliationService(source, markers, accountErasureService, Clock.systemUTC(),
+                recentWindow, pageSize);
     }
 }

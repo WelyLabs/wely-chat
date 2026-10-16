@@ -6,6 +6,7 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Set;
 
 /** The deleted-account markers, shared by every chat instance and kept permanently. */
 public interface DeletedUserMarkers {
@@ -23,4 +24,7 @@ public interface DeletedUserMarkers {
 
     /** The ids among these that carry a marker. */
     Flux<String> findDeletedAmong(Collection<String> userIds);
+
+    /** The ids among these whose marker has an erasedAt; no query for an empty input. */
+    Mono<Set<String>> erasedAmong(Collection<String> userIds);
 }

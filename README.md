@@ -283,6 +283,7 @@ Un appel appartient à une conversation, directe ou le groupe d'un événement :
 | `CHT-BUS-012` | 409 | Read-only private conversation: the other participant deleted their account |
 | `CHT-TEC-001` | 502 | wely-media injoignable ou en erreur |
 | `CHT-TEC-002` | 502 | Cloudflare Realtime injoignable, en erreur ou non configuré |
+| `CHT-TEC-003` | 502 | wely-users' list of deleted accounts unreadable or not configured (reconciliation only, never sent to a client) |
 | `CHT-TEC-004` | 502 | MongoDB unreachable, on the account-deletion paths (marker, erasure) |
 | `CHT-VAL-001` | 400 | Validation du corps de requête, détail par champ |
 | `CHT-REQ-000` | *repris* | Chemin inconnu, méthode non autorisée |
@@ -330,6 +331,9 @@ client peut tester et un `timestamp` :
 | `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET` | Application Realtime SFU. Vides par défaut : le service démarre, les appels répondent `CHT-TEC-002` |
 | `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` | Clé TURN. Vides : STUN seul, ce qui suffit sur la plupart des réseaux |
 | `CHAT_USER_DELETED_ENABLED` | `true` by default; `false` unbinds the `USER_DELETED` consumer (see Account deletion) |
+| `USERS_API_URL` | wely-users' in-cluster URL, read by the reconciliation (`http://localhost:8082` in the `dev` profile). Empty by default: the service starts, each pass fails with `CHT-TEC-003` |
+| `DELETED_USERS_READER_SECRET` | Reader secret of wely-users' deleted-accounts list, sent in `X-Internal-Secret`; distinct from `MEDIA_API_SECRET`. Empty by default, same effect as above |
+| `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | `true` by default; `false` stops the reconciliation loop |
 
 ---
 
@@ -439,9 +443,18 @@ pseudonymous businessId.
 - **Several pods** — the record reaches one pod. `LiveSessionSweeper` runs on every pod and, every
   30 s, completes the streams of accounts that now carry a marker. A completed stream (not a
   failed one) stops the web app from reconnecting.
-- **Limitation** — the reactive binding acknowledges a record as it arrives, so a pod that crashes
-  mid-erasure loses it, like a record skipped after its retries. Until a replay exists, such an
-  account stays as the last completed step left it.
+- **Reconciliation** — Kafka is the fast path, not the guarantee. `DeletedUsersReconciliationLoop`
+  pages wely-users' tombstones (`GET /user-service/internal/deleted-users`, reached on the
+  wely-users Service with `X-Internal-Secret: DELETED_USERS_READER_SECRET`, 500 per page) one minute
+  after startup, then every 24 h. It runs the same erasure for every tombstone whose marker is
+  missing or has no `erasedAt`, and again for every account deleted less than 48 h ago, which
+  sweeps writes made with a token still valid after the deletion. A pass that fails, or that
+  counts a failed erasure, is retried after 1 h; a pass still running after 24 h (a hung query)
+  is cut and retried 1 h later. Each pass logs one summary line (tombstones, erased, failed).
+  Every pod runs it: the erasure is idempotent, so the duplicate work is harmless.
+  It repairs a record lost by a pod that crashed mid-erasure (the reactive binding acknowledges a
+  record as it arrives), a record skipped after its retries, a new consumer group, and a restored
+  database.
 
 ## Démarrage
 

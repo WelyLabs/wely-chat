@@ -109,7 +109,13 @@ public enum ChatErrorCode {
             "The call service could not be reached; try again shortly.",
             HttpStatus.BAD_GATEWAY),
 
-    // CHT-TEC-003 is reserved for USERS_UNAVAILABLE, the user directory read by reconciliation.
+    /** wely-users' list of deleted accounts could not be read; only the reconciliation loop reads it. */
+    USERS_UNAVAILABLE(
+            "CHT-TEC-003",
+            "User directory unavailable",
+            "The deleted accounts could not be listed from wely-users; try again shortly.",
+            HttpStatus.BAD_GATEWAY),
+
     STORE_UNAVAILABLE(
             "CHT-TEC-004",
             "Message store unavailable",

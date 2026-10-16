@@ -7,6 +7,7 @@ import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.infrastructure.messaging.adapters.EventGroupConsumer;
 import com.calendar.chat.infrastructure.messaging.adapters.KafkaMessageBroadcaster;
 import com.calendar.chat.infrastructure.messaging.adapters.LocalMessageBroadcaster;
+import com.calendar.chat.infrastructure.reconciliation.DeletedUsersReconciliationLoop;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,6 +62,12 @@ class ChatApplicationTest {
     @Test
     void contextShouldNotConsumeEventGroupsWithoutABroker() {
         assertThat(context.getBeansOfType(EventGroupConsumer.class)).isEmpty();
+    }
+
+    /** The loop would call wely-users a minute after startup; the test profile switches it off. */
+    @Test
+    void contextShouldNotRunTheReconciliationLoop_whenDisabled() {
+        assertThat(context.getBeansOfType(DeletedUsersReconciliationLoop.class)).isEmpty();
     }
 
     /**
