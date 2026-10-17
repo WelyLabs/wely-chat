@@ -35,6 +35,8 @@ public class CallEntity {
     private String id;
     private String conversationId;
     private String startedBy;
+    /** Absent on calls stored before it existed: read as null. */
+    private String startedByName;
     private String media;
     private String status;
     private boolean live;

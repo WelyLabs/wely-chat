@@ -20,7 +20,7 @@ class CallPersistenceMapperTest {
     private final CallPersistenceMapper mapper = Mappers.getMapper(CallPersistenceMapper.class);
 
     private static Call call(CallStatus status) {
-        return new Call("call-1", "conv-1", "alice", CallMedia.VIDEO, status, NOW, null, List.of("alice", "bob"),
+        return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, status, NOW, null, List.of("alice", "bob"),
                 List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio", "camera"))));
     }
 
@@ -37,6 +37,7 @@ class CallPersistenceMapperTest {
 
         assertThat(entity.getStatus()).isEqualTo("ACTIVE");
         assertThat(entity.getMedia()).isEqualTo("VIDEO");
+        assertThat(entity.getStartedByName()).isEqualTo("Alice");
         assertThat(entity.getParticipants()).singleElement()
                 .satisfies(participant -> assertThat(participant.getTrackNames()).containsExactly("audio", "camera"));
     }
@@ -46,6 +47,17 @@ class CallPersistenceMapperTest {
         Call call = call(CallStatus.ACTIVE);
 
         assertThat(mapper.toDomain(mapper.toEntity(call))).isEqualTo(call);
+    }
+
+    @Test
+    void toDomain_shouldReadANullName_fromACallStoredBeforeIt() {
+        CallEntity older = mapper.toEntity(call(CallStatus.ENDED));
+        older.setStartedByName(null);
+
+        Call call = mapper.toDomain(older);
+
+        assertThat(call.startedByName()).isNull();
+        assertThat(call.startedBy()).isEqualTo("alice");
     }
 
     @Test

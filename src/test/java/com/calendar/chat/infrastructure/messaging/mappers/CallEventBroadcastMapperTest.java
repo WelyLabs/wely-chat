@@ -22,7 +22,7 @@ class CallEventBroadcastMapperTest {
     private final CallEventBroadcastMapper mapper = Mappers.getMapper(CallEventBroadcastMapper.class);
 
     private static CallEvent event() {
-        Call call = new Call("call-1", "conv-1", "alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
+        Call call = new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
                 List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio"))));
         return new CallEvent(CallEventType.TRACKS_PUBLISHED, "bob", "alice", call);
     }
@@ -33,6 +33,7 @@ class CallEventBroadcastMapperTest {
 
         assertThat(dto.type()).isEqualTo("TRACKS_PUBLISHED");
         assertThat(dto.call().status()).isEqualTo("ACTIVE");
+        assertThat(dto.call().startedByName()).isEqualTo("Alice");
         assertThat(dto.call().participants()).singleElement()
                 .satisfies(participant -> assertThat(participant.sessionId()).isEqualTo("s-1"));
     }
@@ -40,5 +41,16 @@ class CallEventBroadcastMapperTest {
     @Test
     void toCallEvent_shouldGiveBackTheSameEvent() {
         assertThat(mapper.toCallEvent(mapper.toBroadcastDTO(event()))).isEqualTo(event());
+    }
+
+    @Test
+    void toCall_shouldReadANullName_fromAnInstanceThatPredatesIt() {
+        CallEventBroadcastDTO.CallDTO older = new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", null,
+                "AUDIO", "RINGING", NOW, null, List.of("alice", "bob"), List.of());
+
+        Call call = mapper.toCall(older);
+
+        assertThat(call.startedByName()).isNull();
+        assertThat(call.startedBy()).isEqualTo("alice");
     }
 }

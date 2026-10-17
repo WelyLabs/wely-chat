@@ -7,11 +7,13 @@ import java.util.Optional;
 /**
  * An audio or video call in a conversation, direct or an event's group.
  *
+ * @param startedByName the caller's display name, for ringing screens; null on calls stored before it existed
  * @param memberIds    the conversation's members when the call started: who it rings and who can join
  * @param participants who is in the call right now
  * @param endedAt      null while the call is live
  */
-public record Call(String id, String conversationId, String startedBy, CallMedia media, CallStatus status,
+public record Call(String id, String conversationId, String startedBy, String startedByName, CallMedia media,
+                   CallStatus status,
                    Instant startedAt, Instant endedAt, List<String> memberIds, List<CallParticipant> participants) {
 
     public Call {
@@ -20,9 +22,10 @@ public record Call(String id, String conversationId, String startedBy, CallMedia
     }
 
     /** A call that starts ringing, with nobody in it yet: the caller joins like everyone else. */
-    public static Call ringing(String conversationId, String startedBy, CallMedia media, Instant at,
-                               List<String> memberIds) {
-        return new Call(null, conversationId, startedBy, media, CallStatus.RINGING, at, null, memberIds, List.of());
+    public static Call ringing(String conversationId, String startedBy, String startedByName, CallMedia media,
+                               Instant at, List<String> memberIds) {
+        return new Call(null, conversationId, startedBy, startedByName, media, CallStatus.RINGING, at, null,
+                memberIds, List.of());
     }
 
     public boolean isLive() {

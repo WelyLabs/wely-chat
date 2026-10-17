@@ -41,6 +41,7 @@ import java.util.function.Supplier;
 public class CallController {
 
     private static final String BUSINESS_ID = "businessId";
+    private static final String USERNAME = "preferred_username";
 
     private final CallService callService;
     private final CallRestMapper mapper;
@@ -54,7 +55,8 @@ public class CallController {
     @PostMapping
     public Mono<CallDTO> start(@AuthenticationPrincipal Jwt jwt, @RequestBody StartCallRequest request) {
         CallMedia media = parsed(() -> CallMedia.valueOf(request.media()));
-        return callService.start(caller(jwt), required(request.conversationId()), media).map(mapper::toDTO);
+        return callService.start(caller(jwt), jwt.getClaimAsString(USERNAME), required(request.conversationId()), media)
+                .map(mapper::toDTO);
     }
 
     /** The conversation's live call, or 204 when there is none. */

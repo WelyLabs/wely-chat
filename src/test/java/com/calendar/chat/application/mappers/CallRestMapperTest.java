@@ -27,13 +27,14 @@ class CallRestMapperTest {
 
     @Test
     void toDTO_shouldKeepWhoPublishesWhat_butNotTheRelaySessions() {
-        Call call = new Call("call-1", "conv-1", "alice", CallMedia.AUDIO, CallStatus.RINGING, NOW, null,
+        Call call = new Call("call-1", "conv-1", "alice", "Alice", CallMedia.AUDIO, CallStatus.RINGING, NOW, null,
                 List.of("alice"), List.of(new CallParticipant("alice", "s-secret", NOW, NOW, List.of("audio"))));
 
         CallDTO dto = mapper.toDTO(call);
 
         assertThat(dto.participants()).containsExactly(new CallDTO.Participant("alice", NOW, List.of("audio")));
         assertThat(dto.toString()).doesNotContain("s-secret");
+        assertThat(dto.startedByName()).isEqualTo("Alice");
     }
 
     @Test

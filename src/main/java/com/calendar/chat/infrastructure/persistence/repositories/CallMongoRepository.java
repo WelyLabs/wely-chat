@@ -70,4 +70,9 @@ public interface CallMongoRepository extends ReactiveMongoRepository<CallEntity,
     @Query("{ 'live': false, 'participants.userId': ?0 }")
     @Update("{ '$pull': { 'participants': { 'userId': ?0 } } }")
     Mono<Long> pullFromEnded(String userId);
+
+    /** Erases the name a deleted user started calls under, live or ended. */
+    @Query("{ 'startedBy': ?0, 'startedByName': { $exists: true } }")
+    @Update("{ '$unset': { 'startedByName': '' } }")
+    Mono<Long> clearStarterName(String userId);
 }

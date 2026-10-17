@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mapstruct.factory.Mappers;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -24,8 +26,10 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -47,7 +51,7 @@ class MongoCallRepositoryAdapterTest {
     }
 
     private static Call call(CallStatus status, CallParticipant... participants) {
-        return new Call("call-1", "conv-1", "alice", CallMedia.AUDIO, status, NOW, null, List.of("alice", "bob"),
+        return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.AUDIO, status, NOW, null, List.of("alice", "bob"),
                 List.of(participants));
     }
 
@@ -65,6 +69,10 @@ class MongoCallRepositoryAdapterTest {
         when(repository.save(any())).thenReturn(Mono.just(mapper.toEntity(ringing)));
 
         StepVerifier.create(adapter.createOrGetLive(ringing)).expectNext(ringing).verifyComplete();
+
+        ArgumentCaptor<CallEntity> saved = ArgumentCaptor.forClass(CallEntity.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getStartedByName()).isEqualTo("Alice");
     }
 
     @Test
@@ -187,12 +195,26 @@ class MongoCallRepositoryAdapterTest {
     }
 
     @Test
-    void removeFromEndedCalls_shouldDelegate() {
+    void removeFromEndedCalls_shouldPullTheSessions_thenEraseTheCallerName() {
         when(repository.pullFromEnded("bob")).thenReturn(Mono.just(4L));
+        when(repository.clearStarterName("bob")).thenReturn(Mono.just(2L));
 
         StepVerifier.create(adapter.removeFromEndedCalls("bob")).verifyComplete();
 
-        verify(repository).pullFromEnded("bob");
+        InOrder order = inOrder(repository);
+        order.verify(repository).pullFromEnded("bob");
+        order.verify(repository).clearStarterName("bob");
+    }
+
+    @Test
+    void removeFromEndedCalls_shouldTranslateAStoreFailure_whileErasingTheCallerName() {
+        when(repository.pullFromEnded("bob")).thenReturn(Mono.just(0L));
+        when(repository.clearStarterName("bob"))
+                .thenReturn(Mono.error(new DataAccessResourceFailureException("mongo down")));
+
+        StepVerifier.create(adapter.removeFromEndedCalls("bob"))
+                .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
+                .verify();
     }
 
     @Test

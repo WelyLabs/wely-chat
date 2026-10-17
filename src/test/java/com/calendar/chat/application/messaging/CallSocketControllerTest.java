@@ -41,7 +41,7 @@ class CallSocketControllerTest {
 
     @Test
     void streamEvents_shouldAttachTheStreamToTheCallersLiveSession() {
-        Call call = Call.ringing("conv-1", "alice", CallMedia.VIDEO, Instant.EPOCH, List.of("alice", "bob"));
+        Call call = Call.ringing("conv-1", "alice", "Alice", CallMedia.VIDEO, Instant.EPOCH, List.of("alice", "bob"));
         when(callService.streamEvents("bob")).thenReturn(Flux.just(new CallEvent(CallEventType.RINGING, "bob", "alice", call)));
         when(liveSessions.attach(eq("bob"), any())).thenAnswer(invocation -> invocation.getArgument(1));
 

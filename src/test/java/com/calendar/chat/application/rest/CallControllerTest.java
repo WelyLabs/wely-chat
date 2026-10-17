@@ -63,20 +63,34 @@ class CallControllerTest {
     void setUp() {
         controller = new CallController(callService, Mappers.getMapper(CallRestMapper.class));
         lenient().when(jwt.getClaimAsString("businessId")).thenReturn("bob");
+        lenient().when(jwt.getClaimAsString("preferred_username")).thenReturn("Bob");
     }
 
     private static Call call() {
-        return new Call("call-1", "conv-1", "alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
+        return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
                 List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-alice", NOW, NOW, List.of("audio"))));
     }
 
     @Test
     @DisplayName("the caller comes from the token, never from the body")
     void start_shouldStartForTheTokensUser() {
-        when(callService.start("bob", "conv-1", CallMedia.AUDIO)).thenReturn(Mono.just(call()));
+        when(callService.start("bob", "Bob", "conv-1", CallMedia.AUDIO)).thenReturn(Mono.just(call()));
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
-                .assertNext(dto -> assertThat(dto.id()).isEqualTo("call-1"))
+                .assertNext(dto -> {
+                    assertThat(dto.id()).isEqualTo("call-1");
+                    assertThat(dto.startedByName()).isEqualTo("Alice");
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void start_shouldPassANullName_whenTheTokenHasNone() {
+        when(jwt.getClaimAsString("preferred_username")).thenReturn(null);
+        when(callService.start("bob", null, "conv-1", CallMedia.AUDIO)).thenReturn(Mono.just(call()));
+
+        StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
+                .expectNextCount(1)
                 .verifyComplete();
     }
 
@@ -96,7 +110,7 @@ class CallControllerTest {
 
     @Test
     void start_shouldFailWithAccountDeleted_whenTheCallerIsDeleted() {
-        when(callService.start("bob", "conv-1", CallMedia.AUDIO))
+        when(callService.start("bob", "Bob", "conv-1", CallMedia.AUDIO))
                 .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
@@ -107,7 +121,7 @@ class CallControllerTest {
 
     @Test
     void start_shouldFailWithReadOnly_whenTheConversationIsReadOnly() {
-        when(callService.start("bob", "conv-1", CallMedia.AUDIO))
+        when(callService.start("bob", "Bob", "conv-1", CallMedia.AUDIO))
                 .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY)));
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))

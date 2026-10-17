@@ -5,6 +5,7 @@ import com.calendar.chat.domain.models.CallMedia;
 import com.calendar.chat.domain.models.CallParticipant;
 import com.calendar.chat.domain.models.CallStatus;
 import com.calendar.chat.infrastructure.persistence.models.entities.CallEntity;
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,7 +62,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
     }
 
     private Call start(String conversationId) {
-        return adapter.createOrGetLive(Call.ringing(conversationId, "alice", CallMedia.VIDEO, T0,
+        return adapter.createOrGetLive(Call.ringing(conversationId, "alice", "Alice", CallMedia.VIDEO, T0,
                 List.of("alice", "bob", "carol"))).block();
     }
 
@@ -73,7 +74,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
     @DisplayName("two calls started at once in a conversation end up as one")
     void createOrGetLive_shouldKeepOneLiveCallPerConversation() {
         List<Call> started = Flux.range(0, 5)
-                .flatMap(attempt -> adapter.createOrGetLive(Call.ringing("conv-1", "user-" + attempt,
+                .flatMap(attempt -> adapter.createOrGetLive(Call.ringing("conv-1", "user-" + attempt, null,
                         CallMedia.AUDIO, T0, List.of("alice"))))
                 .collectList().block();
 
@@ -186,21 +187,21 @@ class MongoCallRepositoryAdapterIntegrationTest {
     @DisplayName("a deleted account's live calls are those it is in, started or is rung in; ended ones are left out")
     void findLiveInvolving_shouldFindLiveCallsTheUserIsInStartedOrIsRungIn_notEndedOnes() {
         Call startedByAlice = start("conv-1");
-        Call joinedByAlice = adapter.createOrGetLive(Call.ringing("conv-2", "bob", CallMedia.AUDIO, T0,
+        Call joinedByAlice = adapter.createOrGetLive(Call.ringing("conv-2", "bob", "Bob", CallMedia.AUDIO, T0,
                 List.of("alice", "bob"))).block();
         adapter.addParticipant(joinedByAlice.id(), participant("alice", T0), 12).block();
-        Call ended = adapter.createOrGetLive(Call.ringing("conv-3", "alice", CallMedia.AUDIO, T0,
+        Call ended = adapter.createOrGetLive(Call.ringing("conv-3", "alice", "Alice", CallMedia.AUDIO, T0,
                 List.of("alice", "bob"))).block();
         adapter.end(ended.id(), CallStatus.MISSED, T0).block();
-        Call ringingAlice = adapter.createOrGetLive(Call.ringing("conv-4", "bob", CallMedia.AUDIO, T0,
+        Call ringingAlice = adapter.createOrGetLive(Call.ringing("conv-4", "bob", "Bob", CallMedia.AUDIO, T0,
                 List.of("alice", "bob"))).block();
         adapter.addParticipant(ringingAlice.id(), participant("bob", T0), 12).block();
-        Call answeredWithoutAlice = adapter.createOrGetLive(Call.ringing("conv-5", "bob", CallMedia.AUDIO, T0,
+        Call answeredWithoutAlice = adapter.createOrGetLive(Call.ringing("conv-5", "bob", "Bob", CallMedia.AUDIO, T0,
                 List.of("alice", "bob", "carol"))).block();
         adapter.addParticipant(answeredWithoutAlice.id(), participant("bob", T0), 12).block();
         adapter.addParticipant(answeredWithoutAlice.id(), participant("carol", T0), 12).block();
         adapter.markActive(answeredWithoutAlice.id()).block();
-        adapter.createOrGetLive(Call.ringing("conv-6", "bob", CallMedia.AUDIO, T0, List.of("bob", "carol"))).block();
+        adapter.createOrGetLive(Call.ringing("conv-6", "bob", "Bob", CallMedia.AUDIO, T0, List.of("bob", "carol"))).block();
 
         StepVerifier.create(adapter.findLiveInvolving("alice").map(Call::id).collectList())
                 .assertNext(ids -> assertThat(ids)
@@ -226,5 +227,36 @@ class MongoCallRepositoryAdapterIntegrationTest {
         assertThat(endedAfter.startedBy()).isEqualTo("alice");
         assertThat(adapter.findById(live.id(), "alice").block().participantIds()).containsExactly("alice");
         StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+    }
+
+    @Test
+    @DisplayName("the caller name is stored, and erased with the account from every call it started")
+    void removeFromEndedCalls_shouldEraseTheCallerName_fromCallsTheUserStartedOnly() {
+        Call byAlice = start("conv-1");
+        Call byBob = adapter.createOrGetLive(Call.ringing("conv-2", "bob", "Bob", CallMedia.AUDIO, T0,
+                List.of("alice", "bob"))).block();
+        assertThat(adapter.findById(byAlice.id(), "alice").block().startedByName()).isEqualTo("Alice");
+
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+
+        assertThat(adapter.findById(byAlice.id(), "bob").block().startedByName()).isNull();
+        assertThat(adapter.findById(byBob.id(), "bob").block().startedByName()).isEqualTo("Bob");
+    }
+
+    @Test
+    @DisplayName("a call stored before the caller name existed reads with a null name")
+    void findById_shouldReadANullName_fromACallStoredBeforeIt() {
+        Document older = new Document("_id", "old-call").append("conversationId", "conv-9")
+                .append("startedBy", "alice").append("media", "VIDEO").append("status", "ENDED")
+                .append("live", false).append("startedAt", T0).append("endedAt", T0)
+                .append("memberIds", List.of("alice", "bob")).append("participants", List.of());
+        mongoTemplate.insert(older, "calls").block();
+
+        StepVerifier.create(adapter.findById("old-call", "bob"))
+                .assertNext(call -> {
+                    assertThat(call.startedBy()).isEqualTo("alice");
+                    assertThat(call.startedByName()).isNull();
+                })
+                .verifyComplete();
     }
 }

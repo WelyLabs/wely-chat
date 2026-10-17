@@ -17,7 +17,7 @@ class LocalCallBroadcasterTest {
 
     private static CallEvent ringing(String recipientId) {
         return new CallEvent(CallEventType.RINGING, recipientId, "alice",
-                Call.ringing("conv-1", "alice", CallMedia.AUDIO, Instant.EPOCH, List.of("alice", recipientId)));
+                Call.ringing("conv-1", "alice", "Alice", CallMedia.AUDIO, Instant.EPOCH, List.of("alice", recipientId)));
     }
 
     @Test

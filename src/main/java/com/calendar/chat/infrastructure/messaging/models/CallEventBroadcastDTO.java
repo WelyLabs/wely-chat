@@ -9,7 +9,9 @@ import java.util.List;
  */
 public record CallEventBroadcastDTO(String type, String recipientId, String actorId, CallDTO call) {
 
-    public record CallDTO(String id, String conversationId, String startedBy, String media, String status,
+    /** {@code startedByName} is null from an instance that predates it. */
+    public record CallDTO(String id, String conversationId, String startedBy, String startedByName, String media,
+                          String status,
                           Instant startedAt, Instant endedAt, List<String> memberIds,
                           List<ParticipantDTO> participants) {}
 

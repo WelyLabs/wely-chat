@@ -20,7 +20,7 @@ class CallSummaryFormatterTest {
     private final CallSummaryFormatter formatter = new CallSummaryFormatter();
 
     private static Call call(CallMedia media, CallStatus status, Duration length) {
-        return new Call("call-1", "conv-1", "alice", media, status, START, START.plus(length), List.of("alice", "bob"),
+        return new Call("call-1", "conv-1", "alice", "Alice", media, status, START, START.plus(length), List.of("alice", "bob"),
                 List.of());
     }
 

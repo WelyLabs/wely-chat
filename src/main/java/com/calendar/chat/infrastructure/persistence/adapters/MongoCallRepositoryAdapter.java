@@ -106,6 +106,7 @@ public class MongoCallRepositoryAdapter implements CallRepository {
     @Override
     public Mono<Void> removeFromEndedCalls(String userId) {
         return repository.pullFromEnded(userId)
+                .then(Mono.defer(() -> repository.clearStarterName(userId)))
                 .onErrorMap(DataAccessException.class, StoreErrors::unavailable)
                 .then();
     }

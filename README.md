@@ -263,6 +263,7 @@ Un appel appartient à une conversation, directe ou le groupe d'un événement :
 - **Nettoyage** (`CallReaper`, toutes les 10 s, sur chaque pod) : sonnerie expirée, participant sans *heartbeat* depuis 45 s (onglet fermé, réseau perdu), appel de plus de 3 h — garde-fou sur le quota gratuit de Cloudflare (1 000 Go sortants par mois). Les écritures conditionnelles font qu'un seul pod agit sur chaque appel.
 - **Historique** : la fin d'un appel laisse une ligne système dans la conversation (« 📞 Appel vidéo · 12 min », « 📞 Appel audio manqué »), une seule fois grâce à un identifiant dérivé de l'appel.
 - **Diffusion** : les événements suivent le même chemin que les messages (`CallBroadcaster`, local ou Kafka, topic `CALL_EVENTS`).
+- **Caller name**: `POST /calls` stores the caller's `preferred_username` as `startedByName`, returned in every call (REST, `call.events`, `CALL_EVENTS`) so ringing screens and notifications can say who is calling. It is `null` on calls stored before it existed, and on events from an older instance.
 - **TURN** : identifiants éphémères (4 h) demandés à Cloudflare à chaque entrée dans un appel ; sans clé, ou si Cloudflare échoue, STUN seul.
 
 ## Gestion des erreurs
@@ -425,7 +426,8 @@ pseudonymous businessId.
   6. in a live call, it leaves first, so a device still connected can no longer reopen tracks,
      then its Cloudflare session is closed; a ringing call it started, or a ringing private call
      to it, ends `ENDED`, never `MISSED`, so nobody is notified of a missed call from a deleted
-     account; ended calls lose its session entries;
+     account; ended calls lose its session entries, and every call it started loses its
+     `startedByName`;
   7. `presence_connections` and `last_seen` are deleted;
   8. `erasedAt` is set.
 - **Kept** — message ids, `s_id`, text, photos, private conversations (read-only), and

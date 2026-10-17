@@ -36,7 +36,7 @@ class CallEventConsumerTest {
 
     private static CallEventBroadcastDTO payload(String recipientId) {
         return new CallEventBroadcastDTO("RINGING", recipientId, "alice",
-                new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", "AUDIO", "RINGING", AT, null,
+                new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", "Alice", "AUDIO", "RINGING", AT, null,
                         List.of("alice", recipientId), List.of()));
     }
 
@@ -59,6 +59,20 @@ class CallEventConsumerTest {
         consumer.accept(Flux.just(record("bob"), record("carol")));
 
         verify(broadcaster).accept(payload("carol"));
+    }
+
+    @Test
+    void callEvents_shouldReadANullName_fromAnInstanceThatPredatesIt() {
+        String older = """
+                {"type":"RINGING","recipientId":"bob","actorId":"alice","call":{"id":"call-1",
+                "conversationId":"conv-1","startedBy":"alice","media":"AUDIO","status":"RINGING",
+                "startedAt":"2026-10-15T18:00:00Z","memberIds":["alice","bob"],"participants":[]}}""";
+
+        consumer.accept(Flux.just(MessageBuilder.withPayload(older.getBytes(StandardCharsets.UTF_8)).build()));
+
+        verify(broadcaster).accept(new CallEventBroadcastDTO("RINGING", "bob", "alice",
+                new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", null, "AUDIO", "RINGING", AT, null,
+                        List.of("alice", "bob"), List.of())));
     }
 
     @Test

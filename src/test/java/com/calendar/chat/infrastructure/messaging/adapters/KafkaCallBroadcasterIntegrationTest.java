@@ -66,7 +66,7 @@ class KafkaCallBroadcasterIntegrationTest {
     void broadcast_shouldReachTheSubscriberThroughKafka() {
         assertThat(broadcaster).isInstanceOf(KafkaCallBroadcaster.class);
         CallEvent ringing = new CallEvent(CallEventType.RINGING, "bob", "alice",
-                Call.ringing("conv-1", "alice", CallMedia.VIDEO, Instant.parse("2026-10-15T18:00:00Z"),
+                Call.ringing("conv-1", "alice", "Alice", CallMedia.VIDEO, Instant.parse("2026-10-15T18:00:00Z"),
                         List.of("alice", "bob")));
 
         StepVerifier.create(broadcaster.subscribe("bob"))

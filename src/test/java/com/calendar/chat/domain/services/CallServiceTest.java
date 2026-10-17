@@ -108,7 +108,7 @@ class CallServiceTest {
     }
 
     private static Call call(CallStatus status, List<String> members, CallParticipant... participants) {
-        return new Call("call-1", "conv-1", "alice", CallMedia.VIDEO, status, NOW, null, members,
+        return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, status, NOW, null, members,
                 List.of(participants));
     }
 
@@ -131,12 +131,13 @@ class CallServiceTest {
         Call created = call(CallStatus.RINGING, List.of("alice", "bob", "carol"));
         when(callRepository.createOrGetLive(any())).thenReturn(Mono.just(created));
 
-        StepVerifier.create(service.start("alice", "conv-1", CallMedia.VIDEO)).expectNext(created).verifyComplete();
+        StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.VIDEO)).expectNext(created).verifyComplete();
 
         ArgumentCaptor<Call> saved = ArgumentCaptor.forClass(Call.class);
         verify(callRepository).createOrGetLive(saved.capture());
         assertThat(saved.getValue().memberIds()).containsExactly("alice", "bob", "carol");
         assertThat(saved.getValue().startedAt()).isEqualTo(NOW);
+        assertThat(saved.getValue().startedByName()).isEqualTo("Alice");
         assertThat(broadcastEvents(2))
                 .extracting(CallEvent::type, CallEvent::recipientId, CallEvent::actorId)
                 .containsExactly(
@@ -145,12 +146,28 @@ class CallServiceTest {
     }
 
     @Test
+    void start_shouldStillRing_whenTheCallerHasNoName() {
+        memberOfConversation("alice");
+        when(callRepository.findLive("conv-1")).thenReturn(Mono.empty());
+        Call created = call(CallStatus.RINGING, List.of("alice", "bob"));
+        when(callRepository.createOrGetLive(any())).thenReturn(Mono.just(created));
+
+        StepVerifier.create(service.start("alice", null, "conv-1", CallMedia.AUDIO)).expectNext(created)
+                .verifyComplete();
+
+        ArgumentCaptor<Call> saved = ArgumentCaptor.forClass(Call.class);
+        verify(callRepository).createOrGetLive(saved.capture());
+        assertThat(saved.getValue().startedByName()).isNull();
+        assertThat(broadcastEvents(1)).extracting(CallEvent::recipientId).containsExactly("bob");
+    }
+
+    @Test
     void start_shouldReturnTheLiveCall_whenTheConversationAlreadyHasOne() {
         memberOfConversation("bob");
         Call live = call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), in("alice"), in("carol"));
         when(callRepository.findLive("conv-1")).thenReturn(Mono.just(live));
 
-        StepVerifier.create(service.start("bob", "conv-1", CallMedia.AUDIO)).expectNext(live).verifyComplete();
+        StepVerifier.create(service.start("bob", "Bob", "conv-1", CallMedia.AUDIO)).expectNext(live).verifyComplete();
 
         verify(callRepository, never()).createOrGetLive(any());
         verifyNoInteractions(callBroadcaster);
@@ -163,7 +180,7 @@ class CallServiceTest {
         Call startedByAlice = call(CallStatus.RINGING, List.of("alice", "bob", "carol"));
         when(callRepository.createOrGetLive(any())).thenReturn(Mono.just(startedByAlice));
 
-        StepVerifier.create(service.start("bob", "conv-1", CallMedia.AUDIO)).expectNext(startedByAlice)
+        StepVerifier.create(service.start("bob", "Bob", "conv-1", CallMedia.AUDIO)).expectNext(startedByAlice)
                 .verifyComplete();
 
         verifyNoInteractions(callBroadcaster);
@@ -173,7 +190,7 @@ class CallServiceTest {
     void start_shouldRefuse_whenTheCallerIsNotInTheConversation() {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.start("mallory", "conv-1", CallMedia.AUDIO))
+        StepVerifier.create(service.start("mallory", "Mallory", "conv-1", CallMedia.AUDIO))
                 .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
                         .isEqualTo(ChatErrorCode.CONVERSATION_NOT_FOUND));
 
@@ -184,7 +201,7 @@ class CallServiceTest {
     void start_shouldRefuseWithAccountDeleted_whenTheCallerIsDeleted() {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO))
+        StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
                 .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
                         .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
 
@@ -197,7 +214,7 @@ class CallServiceTest {
                 List.of(), 0, null, null, null, true);
         when(chatRepository.findById("conv-1", "alice")).thenReturn(Mono.just(readOnly));
 
-        StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO))
+        StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
                 .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
                         .isEqualTo(ChatErrorCode.CONVERSATION_READ_ONLY));
 
@@ -666,11 +683,11 @@ class CallServiceTest {
     @Test
     @DisplayName("a call the deleted user rang alone ends ENDED: MISSED would notify a missed call from them")
     void removeUser_shouldEndARingingCallTheUserWasAloneIn_withoutEmittingMissed() {
-        Call rangByBob = new Call("call-1", "conv-1", "bob", CallMedia.AUDIO, CallStatus.RINGING, NOW, null,
+        Call rangByBob = new Call("call-1", "conv-1", "bob", "Bob", CallMedia.AUDIO, CallStatus.RINGING, NOW, null,
                 List.of("alice", "bob"), List.of(in("bob")));
         bobIsIn(rangByBob);
         when(mediaRelay.closeSession("session-bob")).thenReturn(Mono.empty());
-        when(callRepository.removeParticipant("call-1", "bob")).thenReturn(Mono.just(new Call("call-1", "conv-1", "bob",
+        when(callRepository.removeParticipant("call-1", "bob")).thenReturn(Mono.just(new Call("call-1", "conv-1", "bob", "Bob",
                 CallMedia.AUDIO, CallStatus.RINGING, NOW, null, List.of("alice", "bob"), List.of())));
         when(callRepository.end("call-1", CallStatus.ENDED, NOW))
                 .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
@@ -683,7 +700,7 @@ class CallServiceTest {
 
     @Test
     void removeUser_shouldEndARingingCallTheUserStartedButNeverJoined_withoutEmittingMissed() {
-        Call rangByBob = new Call("call-1", "conv-1", "bob", CallMedia.VIDEO, CallStatus.RINGING, NOW, null,
+        Call rangByBob = new Call("call-1", "conv-1", "bob", "Bob", CallMedia.VIDEO, CallStatus.RINGING, NOW, null,
                 List.of("alice", "bob"), List.of());
         bobIsIn(rangByBob);
         when(callRepository.end("call-1", CallStatus.ENDED, NOW))
@@ -727,7 +744,7 @@ class CallServiceTest {
     @Test
     @DisplayName("a call the user started and has already left goes on for the others")
     void removeUser_shouldLeaveAnActiveCallTheUserStartedButLeftAlone() {
-        Call startedByBob = new Call("call-1", "conv-1", "bob", CallMedia.AUDIO, CallStatus.ACTIVE, NOW, null,
+        Call startedByBob = new Call("call-1", "conv-1", "bob", "Bob", CallMedia.AUDIO, CallStatus.ACTIVE, NOW, null,
                 List.of("alice", "bob", "carol"), List.of(in("alice"), in("carol")));
         bobIsIn(startedByBob);
 
@@ -839,7 +856,7 @@ class CallServiceTest {
         when(callBroadcaster.broadcast(any()))
                 .thenReturn(Mono.error(new IllegalStateException("broker down")), Mono.empty());
 
-        StepVerifier.create(service.start("alice", "conv-1", CallMedia.AUDIO)).expectNext(created).verifyComplete();
+        StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO)).expectNext(created).verifyComplete();
 
         assertThat(broadcastEvents(2)).extracting(CallEvent::recipientId).containsExactly("bob", "carol");
     }

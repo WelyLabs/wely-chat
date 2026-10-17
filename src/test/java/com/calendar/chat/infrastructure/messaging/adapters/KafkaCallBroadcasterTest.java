@@ -5,15 +5,18 @@ import com.calendar.chat.domain.models.CallEvent;
 import com.calendar.chat.domain.models.CallEventType;
 import com.calendar.chat.domain.models.CallMedia;
 import com.calendar.chat.infrastructure.messaging.mappers.CallEventBroadcastMapper;
+import com.calendar.chat.infrastructure.messaging.models.CallEventBroadcastDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
+import org.mockito.ArgumentCaptor;
 import org.springframework.cloud.stream.function.StreamBridge;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -33,7 +36,7 @@ class KafkaCallBroadcasterTest {
 
     private static CallEvent ringing(String recipientId) {
         return new CallEvent(CallEventType.RINGING, recipientId, "alice",
-                Call.ringing("conv-1", "alice", CallMedia.VIDEO, Instant.EPOCH, List.of("alice", recipientId)));
+                Call.ringing("conv-1", "alice", "Alice", CallMedia.VIDEO, Instant.EPOCH, List.of("alice", recipientId)));
     }
 
     @Test
@@ -43,6 +46,17 @@ class KafkaCallBroadcasterTest {
         StepVerifier.create(broadcaster.broadcast(ringing("bob"))).verifyComplete();
 
         verify(streamBridge).send(KafkaCallBroadcaster.DESTINATION, mapper.toBroadcastDTO(ringing("bob")));
+    }
+
+    @Test
+    void broadcast_shouldCarryTheCallerName_forRingingScreens() {
+        when(streamBridge.send(eq(KafkaCallBroadcaster.DESTINATION), any(Object.class))).thenReturn(true);
+
+        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).verifyComplete();
+
+        ArgumentCaptor<Object> sent = ArgumentCaptor.forClass(Object.class);
+        verify(streamBridge).send(eq(KafkaCallBroadcaster.DESTINATION), sent.capture());
+        assertThat(((CallEventBroadcastDTO) sent.getValue()).call().startedByName()).isEqualTo("Alice");
     }
 
     @Test

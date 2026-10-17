@@ -79,8 +79,11 @@ public class CallService {
         this.clock = clock;
     }
 
-    /** Rings the other members of a conversation the caller may write to, or returns its live call. */
-    public Mono<Call> start(String userId, String conversationId, CallMedia media) {
+    /**
+     * Rings the other members of a conversation the caller may write to, or returns its live call.
+     * {@code userName} is only shown on ringing screens; it may be null.
+     */
+    public Mono<Call> start(String userId, String userName, String conversationId, CallMedia media) {
         return guard.requireActive(userId)
                 .then(Mono.defer(() -> chatRepository.findById(conversationId, userId)))
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
@@ -89,7 +92,7 @@ public class CallService {
                         : Mono.just(conversation))
                 .flatMap(conversation -> callRepository.findLive(conversationId)
                         .switchIfEmpty(Mono.defer(() -> callRepository
-                                .createOrGetLive(Call.ringing(conversationId, userId, media, clock.instant(),
+                                .createOrGetLive(Call.ringing(conversationId, userId, userName, media, clock.instant(),
                                         conversation.getParticipantIds()))
                                 .flatMap(call -> startedBy(call, userId)
                                         ? notify(call, CallEventType.RINGING, userId, call.memberIdsExcept(userId))

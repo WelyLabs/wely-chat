@@ -60,6 +60,9 @@ public interface CallRepository {
     /** Live calls the user is in or started, and ringing calls the user is a member of. */
     Flux<Call> findLiveInvolving(String userId);
 
-    /** Takes the user's participant entries (session, tracks) out of every ended call. */
+    /**
+     * Takes the user's participant entries (session, tracks) out of every ended call, and their
+     * name out of every call they started.
+     */
     Mono<Void> removeFromEndedCalls(String userId);
 }

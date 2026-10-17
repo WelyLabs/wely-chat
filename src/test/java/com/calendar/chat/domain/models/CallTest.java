@@ -16,13 +16,13 @@ class CallTest {
     }
 
     private static Call callWith(CallStatus status, List<CallParticipant> participants) {
-        return new Call("call-1", "conv-1", "alice", CallMedia.VIDEO, status, NOW, null,
+        return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, status, NOW, null,
                 List.of("alice", "bob", "carol"), participants);
     }
 
     @Test
     void ringing_shouldStartWithNobodyInTheCall() {
-        Call call = Call.ringing("conv-1", "alice", CallMedia.AUDIO, NOW, List.of("alice", "bob"));
+        Call call = Call.ringing("conv-1", "alice", "Alice", CallMedia.AUDIO, NOW, List.of("alice", "bob"));
 
         assertThat(call.id()).isNull();
         assertThat(call.status()).isEqualTo(CallStatus.RINGING);
