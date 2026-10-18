@@ -16,7 +16,9 @@ import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 import reactor.core.publisher.Mono;
+import tools.jackson.databind.json.JsonMapper;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -37,11 +39,17 @@ class EventGroupConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new EventGroupConsumer(eventGroupService, Mappers.getMapper(EventGroupMapper.class));
+        consumer = new EventGroupConsumer(eventGroupService, Mappers.getMapper(EventGroupMapper.class),
+                JsonMapper.builder().build());
     }
 
-    private static Message<EventGroupChangedDTO> record(String eventId) {
-        return MessageBuilder.withPayload(new EventGroupChangedDTO(eventId, "t", "a", List.of("a"), 1, false)).build();
+    private static Message<byte[]> record(String eventId) {
+        return raw("{\"eventId\":\"" + eventId + "\",\"title\":\"t\",\"organizerId\":\"a\","
+                + "\"memberIds\":[\"a\"],\"version\":1,\"deleted\":false}");
+    }
+
+    private static Message<byte[]> raw(String json) {
+        return MessageBuilder.withPayload(json.getBytes(StandardCharsets.UTF_8)).build();
     }
 
     @Test
@@ -71,6 +79,16 @@ class EventGroupConsumerTest {
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(eventGroupService, timeout(20_000)).apply(next);
         assertThat(attempts.get()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("an unreadable record is dropped and the next one still applies")
+    void eventGroup_shouldSkipAnUnreadableRecord() {
+        when(eventGroupService.apply(any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(raw("not json"), record("e2")))).verifyComplete();
+
+        verify(eventGroupService).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
     }
 
     @Test

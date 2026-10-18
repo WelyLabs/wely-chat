@@ -11,6 +11,7 @@ import org.springframework.messaging.Message;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.util.function.Function;
@@ -35,20 +36,29 @@ public class EventGroupConsumer {
 
     private final EventGroupService eventGroupService;
     private final EventGroupMapper mapper;
+    private final ObjectMapper objectMapper;
 
-    public EventGroupConsumer(EventGroupService eventGroupService, EventGroupMapper mapper) {
+    public EventGroupConsumer(EventGroupService eventGroupService, EventGroupMapper mapper, ObjectMapper objectMapper) {
         this.eventGroupService = eventGroupService;
         this.mapper = mapper;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
-    public Function<Flux<Message<EventGroupChangedDTO>>, Mono<Void>> eventGroup() {
+    public Function<Flux<Message<byte[]>>, Mono<Void>> eventGroup() {
         return records -> records.concatMap(this::apply).then();
     }
 
-    private Mono<Void> apply(Message<EventGroupChangedDTO> record) {
-        EventGroupChangedDTO group = record.getPayload();
+    private Mono<Void> apply(Message<byte[]> record) {
+        return Mono.fromCallable(() -> objectMapper.readValue(record.getPayload(), EventGroupChangedDTO.class))
+                .onErrorResume(error -> {
+                    log.error("EVENT_GROUP_CHANGED record unreadable, dropped: {}", error.getMessage());
+                    return Mono.empty();
+                })
+                .flatMap(this::applyGroup);
+    }
 
+    private Mono<Void> applyGroup(EventGroupChangedDTO group) {
         return Mono.defer(() -> eventGroupService.apply(mapper.toEventGroup(group)))
                 .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
                 .onErrorResume(error -> {
