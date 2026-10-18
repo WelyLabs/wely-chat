@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -66,9 +68,9 @@ class EventDateFixedConsumerTest {
     void eventDateFixed_shouldPostTheNotice_whenInstantsAreIsoStrings() {
         when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\""),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")));
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
@@ -79,9 +81,9 @@ class EventDateFixedConsumerTest {
     void eventDateFixed_shouldPostTheNotice_whenInstantsAreEpochNumbers() {
         when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "1792083600", "1792090800"),
-                record("e2", "1792083600.000000000", "1792090800.000000000")));
+                record("e2", "1792083600.000000000", "1792090800.000000000")))).verifyComplete();
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
@@ -92,8 +94,8 @@ class EventDateFixedConsumerTest {
     void eventDateFixed_shouldIgnoreUnknownFields() {
         when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(record("""
-                {"eventId":"e1","start":"2026-10-15T17:00:00Z","end":"2026-10-15T19:00:00Z","location":"Lyon"}""")));
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(record("""
+                {"eventId":"e1","start":"2026-10-15T17:00:00Z","end":"2026-10-15T19:00:00Z","location":"Lyon"}""")))).verifyComplete();
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
     }
@@ -103,9 +105,9 @@ class EventDateFixedConsumerTest {
     void eventDateFixed_shouldPostAMoveNotice_whenThePreviousDatesAreGiven() {
         when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(record("""
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(record("""
                 {"eventId":"e1","title":"Bowling","start":"2026-10-15T18:00:00Z","end":"2026-10-15T20:00:00Z",
-                 "organizerId":"olivia","previousStart":"2026-10-15T17:00:00Z","previousEnd":"2026-10-15T19:00:00Z"}""")));
+                 "organizerId":"olivia","previousStart":"2026-10-15T17:00:00Z","previousEnd":"2026-10-15T19:00:00Z"}""")))).verifyComplete();
 
         verify(chatService, timeout(2000)).postSystemNotice("e1",
                 "🔁 Sortie décalée : jeudi 15 octobre, 20:00 – 22:00 (au lieu de 19:00 – 21:00)");
@@ -116,10 +118,10 @@ class EventDateFixedConsumerTest {
     void eventDateFixed_shouldDropAnUnreadableRecord_andKeepConsuming() {
         when(chatService.postSystemNotice(eq("e2"), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("{not json"),
                 record("e1", "\"next thursday\"", "null"),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")));
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
 
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
         verify(chatService, never()).postSystemNotice(eq("e1"), any());
@@ -135,9 +137,9 @@ class EventDateFixedConsumerTest {
         }));
         when(chatService.postSystemNotice(eq("e2"), anyString())).thenReturn(posted());
 
-        consumer.eventDateFixed().accept(Flux.just(
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\""),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")));
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
 
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(chatService, timeout(20_000)).postSystemNotice("e2", SAME_DAY);
@@ -154,12 +156,20 @@ class EventDateFixedConsumerTest {
                         ? Mono.error(new IllegalStateException("no group yet"))
                         : posted().doOnNext(notice -> posted.countDown())));
 
-        consumer.eventDateFixed().accept(Flux.just(
-                record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")));
+        StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
+                record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
 
         assertThat(posted.await(5, TimeUnit.SECONDS)).isTrue();
         // Each attempt calls the service afresh: a retry re-reads the group, which may exist by now.
         assertThat(attempts.get()).isEqualTo(2);
         verify(chatService, times(2)).postSystemNotice("e1", SAME_DAY);
+    }
+
+    @Test
+    @DisplayName("nothing is read until the binder subscribes to the function's result")
+    void eventDateFixed_shouldDoNothingUntilTheBinderSubscribes() {
+        consumer.eventDateFixed().apply(Flux.just(record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")));
+
+        verifyNoInteractions(chatService);
     }
 }

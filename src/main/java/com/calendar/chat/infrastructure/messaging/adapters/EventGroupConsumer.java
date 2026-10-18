@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
 
 import java.time.Duration;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Consumes {@code EVENT_GROUP_CHANGED}: keeps each event's group conversation in step with who
@@ -42,13 +42,8 @@ public class EventGroupConsumer {
     }
 
     @Bean
-    public Consumer<Flux<Message<EventGroupChangedDTO>>> eventGroup() {
-        return flux -> flux
-                .concatMap(this::apply)
-                .subscribe(
-                        unused -> { },
-                        error -> log.error("EVENT_GROUP_CHANGED subscription terminated; "
-                                + "no further groups will be updated until restart", error));
+    public Function<Flux<Message<EventGroupChangedDTO>>, Mono<Void>> eventGroup() {
+        return records -> records.concatMap(this::apply).then();
     }
 
     private Mono<Void> apply(Message<EventGroupChangedDTO> record) {

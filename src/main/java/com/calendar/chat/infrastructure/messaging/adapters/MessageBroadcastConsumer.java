@@ -10,7 +10,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Reads the broadcast topic and hands each record to {@link KafkaMessageBroadcaster}.
@@ -19,16 +19,15 @@ import java.util.function.Consumer;
  * wely-social's consumer. There, a lost {@code USER_CREATED} leaves a user with no node in
  * the graph, so it is retried with backoff. Here the message is already in MongoDB before it
  * reaches the topic: a record that fails to dispatch costs one live update, and a retry would
- * only risk delivering it twice. What must not happen is the error reaching the subscriber and
+ * only risk delivering it twice. What must not happen is a record's error reaching the binder and
  * cancelling the subscription — that would stop this instance receiving anything at all,
  * silently, which is exactly the bug fixed in wely-social.
  *
  * <p>Which is why the per-record failure is caught inside {@code concatMap} and not with
- * {@code onErrorContinue}. That operator only rescues errors it can attribute to an element,
- * and a stream-level failure — the connection dropping, a payload the binder cannot convert —
- * goes straight past it to a {@code subscribe()} with no error handler, where Reactor rethrows
- * it as {@code ErrorCallbackNotImplemented} onto whichever thread happened to signal it.
- * A test of exactly that case is what surfaced this.
+ * {@code onErrorContinue}, which only rescues errors it can attribute to an element. A
+ * stream-level failure — the connection dropping — is not caught here: the bean is a function
+ * returning {@code Mono<Void>}, so the binder subscribes and that failure reaches it, instead of
+ * a {@code subscribe()} of our own that could only log it.
  *
  * <p>Which is also why records arrive as bytes and are read here, one at a time. Converted by the
  * binder, a record it could not read failed the whole stream: when message times became instants,
@@ -49,13 +48,8 @@ public class MessageBroadcastConsumer {
     }
 
     @Bean
-    public Consumer<Flux<Message<byte[]>>> messageBroadcast() {
-        return flux -> flux
-                .concatMap(this::dispatch)
-                .subscribe(
-                        unused -> { },
-                        error -> log.error("Broadcast stream terminated; this instance will "
-                                + "stop receiving live messages until it restarts", error));
+    public Function<Flux<Message<byte[]>>, Mono<Void>> messageBroadcast() {
+        return records -> records.concatMap(this::dispatch).then();
     }
 
     private Mono<Void> dispatch(Message<byte[]> record) {

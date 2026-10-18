@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,7 +48,7 @@ class EventGroupConsumerTest {
     void eventGroup_shouldApplyEachRecord() {
         when(eventGroupService.apply(any())).thenReturn(Mono.empty());
 
-        consumer.eventGroup().accept(Flux.just(record("e1"), record("e2")));
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).verifyComplete();
 
         verify(eventGroupService, timeout(2000)).apply(new EventGroup("e1", "t", "a", List.of("a"), 1));
         verify(eventGroupService, timeout(2000)).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
@@ -64,10 +66,18 @@ class EventGroupConsumerTest {
         }));
         when(eventGroupService.apply(next)).thenReturn(Mono.empty());
 
-        consumer.eventGroup().accept(Flux.just(record("e1"), record("e2")));
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).verifyComplete();
 
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(eventGroupService, timeout(20_000)).apply(next);
         assertThat(attempts.get()).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("nothing is read until the binder subscribes to the function's result")
+    void eventGroup_shouldDoNothingUntilTheBinderSubscribes() {
+        consumer.eventGroup().apply(Flux.just(record("e1")));
+
+        verifyNoInteractions(eventGroupService);
     }
 }

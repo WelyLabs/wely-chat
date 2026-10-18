@@ -10,12 +10,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Reads the call events topic and hands each record to {@link KafkaCallBroadcaster}. Same choices
  * as {@link MessageBroadcastConsumer}: records arrive as bytes and are read one at a time, and a
- * record that fails is dropped inside {@code concatMap}, so it never ends the stream.
+ * record that fails is dropped inside {@code concatMap}, so it never ends the stream. A function
+ * returning {@code Mono<Void>}: the binder subscribes.
  */
 @Slf4j
 @Configuration
@@ -31,13 +32,8 @@ public class CallEventConsumer {
     }
 
     @Bean
-    public Consumer<Flux<Message<byte[]>>> callEvents() {
-        return flux -> flux
-                .concatMap(this::dispatch)
-                .subscribe(
-                        unused -> { },
-                        error -> log.error("Call events stream terminated; this instance will "
-                                + "stop receiving call events until it restarts", error));
+    public Function<Flux<Message<byte[]>>, Mono<Void>> callEvents() {
+        return records -> records.concatMap(this::dispatch).then();
     }
 
     private Mono<Void> dispatch(Message<byte[]> record) {

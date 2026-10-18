@@ -2,23 +2,27 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.infrastructure.messaging.models.CallEventBroadcastDTO;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
+import reactor.core.publisher.Mono;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class CallEventConsumerTest {
 
@@ -26,7 +30,7 @@ class CallEventConsumerTest {
     private static final Instant AT = Instant.parse("2026-10-15T18:00:00Z");
 
     private KafkaCallBroadcaster broadcaster;
-    private Consumer<Flux<Message<byte[]>>> consumer;
+    private Function<Flux<Message<byte[]>>, Mono<Void>> consumer;
 
     @BeforeEach
     void setUp() {
@@ -46,7 +50,7 @@ class CallEventConsumerTest {
 
     @Test
     void callEvents_shouldDispatchEveryRecord() {
-        consumer.accept(Flux.just(record("bob"), record("carol")));
+        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).verifyComplete();
 
         verify(broadcaster).accept(payload("bob"));
         verify(broadcaster).accept(payload("carol"));
@@ -56,7 +60,7 @@ class CallEventConsumerTest {
     void callEvents_shouldKeepConsumingAfterAFailedRecord() {
         doThrow(new IllegalStateException("boom")).when(broadcaster).accept(payload("bob"));
 
-        consumer.accept(Flux.just(record("bob"), record("carol")));
+        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).verifyComplete();
 
         verify(broadcaster).accept(payload("carol"));
     }
@@ -68,7 +72,7 @@ class CallEventConsumerTest {
                 "conversationId":"conv-1","startedBy":"alice","media":"AUDIO","status":"RINGING",
                 "startedAt":"2026-10-15T18:00:00Z","memberIds":["alice","bob"],"participants":[]}}""";
 
-        consumer.accept(Flux.just(MessageBuilder.withPayload(older.getBytes(StandardCharsets.UTF_8)).build()));
+        StepVerifier.create(consumer.apply(Flux.just(MessageBuilder.withPayload(older.getBytes(StandardCharsets.UTF_8)).build()))).verifyComplete();
 
         verify(broadcaster).accept(new CallEventBroadcastDTO("RINGING", "bob", "alice",
                 new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", null, "AUDIO", "RINGING", AT, null,
@@ -79,9 +83,17 @@ class CallEventConsumerTest {
     void callEvents_shouldSkipARecordItCannotRead() {
         Message<byte[]> garbage = MessageBuilder.withPayload("not json".getBytes(StandardCharsets.UTF_8)).build();
 
-        consumer.accept(Flux.just(garbage, record("carol")));
+        StepVerifier.create(consumer.apply(Flux.just(garbage, record("carol")))).verifyComplete();
 
         verify(broadcaster, times(1)).accept(any());
         verify(broadcaster).accept(payload("carol"));
+    }
+
+    @Test
+    @DisplayName("nothing is read until the binder subscribes to the function's result")
+    void callEvents_shouldDoNothingUntilTheBinderSubscribes() {
+        consumer.apply(Flux.just(record("bob")));
+
+        verifyNoInteractions(broadcaster);
     }
 }

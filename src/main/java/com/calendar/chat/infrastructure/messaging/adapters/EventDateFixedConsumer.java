@@ -14,7 +14,7 @@ import reactor.util.retry.Retry;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Consumes {@code EVENT_DATE_FIXED}: posts a notice in the event's group saying when it takes place,
@@ -47,13 +47,8 @@ public class EventDateFixedConsumer {
     }
 
     @Bean
-    public Consumer<Flux<Message<byte[]>>> eventDateFixed() {
-        return flux -> flux
-                .concatMap(this::apply)
-                .subscribe(
-                        unused -> { },
-                        error -> log.error("EVENT_DATE_FIXED subscription terminated; "
-                                + "no further notices will be posted until restart", error));
+    public Function<Flux<Message<byte[]>>, Mono<Void>> eventDateFixed() {
+        return records -> records.concatMap(this::apply).then();
     }
 
     private Mono<Void> apply(Message<byte[]> record) {
