@@ -89,7 +89,7 @@ public class CallService {
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(conversation -> conversation.isReadOnly()
                         ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
-                        : Mono.just(conversation))
+                        : chatService.requireFriendsInDirect(conversation, userId).thenReturn(conversation))
                 .flatMap(conversation -> callRepository.findLive(conversationId)
                         .switchIfEmpty(Mono.defer(() -> callRepository
                                 .createOrGetLive(Call.ringing(conversationId, userId, userName, media, clock.instant(),

@@ -14,6 +14,7 @@ import com.calendar.chat.domain.models.MessageType;
 import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.ports.FriendshipDirectory;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.exception.ChatErrorCode;
 import com.calendar.chat.exception.ChatException;
@@ -56,14 +57,20 @@ class ChatServiceTest {
     @Mock
     private DeletedUserMarkers markers;
 
+    @Mock
+    private FriendshipDirectory friendships;
+
     private static final Instant NOW = Instant.parse("2026-10-14T08:00:00Z");
 
     private ChatService chatService;
 
     @BeforeEach
     void setUp() {
-        chatService = new ChatService(chatRepository, messageBroadcaster, new AccountGuard(markers),
+        AccountGuard guard = new AccountGuard(markers);
+        chatService = new ChatService(chatRepository, messageBroadcaster, guard, new FriendshipService(friendships, guard),
                 Clock.fixed(NOW, ZoneOffset.UTC));
+        // Everyone is friends unless a test says so.
+        lenient().when(friendships.areFriends(anyString(), anyString())).thenReturn(Mono.just(true));
         // Nobody is deleted unless a test says so.
         lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
         lenient().when(markers.findDeletedAmong(any())).thenReturn(Flux.empty());
@@ -106,6 +113,41 @@ class ChatServiceTest {
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectNext(detail)
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("a stranger gets no private conversation: nothing is created")
+    void readOrCreateConversation_shouldRefuseWithFriendshipRequired_andCreateNothing_whenTheyAreNotFriends() {
+        when(friendships.areFriends("user1", "user2")).thenReturn(Mono.just(false));
+        when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .verify();
+
+        verify(chatRepository, never()).saveWithInitialBucket(any());
+    }
+
+    @Test
+    void readOrCreateConversation_shouldRefuseWithFriendshipRequired_whenTheFriendIsOneself() {
+        when(chatRepository.findByParticipantIds(List.of("user1", "user1"))).thenReturn(Mono.empty());
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user1"))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .verify();
+
+        verify(chatRepository, never()).saveWithInitialBucket(any());
+    }
+
+    @Test
+    @DisplayName("the history with a former friend stays readable")
+    void readOrCreateConversation_shouldReturnTheExisting_whenTheyAreNoLongerFriends() {
+        lenient().when(friendships.areFriends("user1", "user2")).thenReturn(Mono.just(false));
+        ConversationDetail detail = new ConversationDetail("conv-1", List.of("user1", "user2"), ConversationType.DIRECT,
+                List.of(), 0, null, null);
+        when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.just(detail));
+
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).verifyComplete();
     }
 
     @Test
@@ -290,6 +332,47 @@ class ChatServiceTest {
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("nobody writes in a private conversation with someone who is not their friend")
+    void sendMessage_shouldRefuseWithFriendshipRequired_andWriteNothing_whenTheyAreNotFriends() {
+        memberOf("caller");
+        when(friendships.areFriends("caller", "friend")).thenReturn(Mono.just(false));
+
+        StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .verify();
+
+        verify(chatRepository, never()).postMessage(any());
+        verify(messageBroadcaster, never()).broadcast(any());
+    }
+
+    @Test
+    void requireFriendsInDirect_shouldComplete_whenTheyAreFriends() {
+        StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller")).verifyComplete();
+
+        verify(friendships).areFriends("caller", "friend");
+    }
+
+    @Test
+    void requireFriendsInDirect_shouldFailWithFriendshipRequired_whenTheyAreNotFriends() {
+        when(friendships.areFriends("caller", "friend")).thenReturn(Mono.just(false));
+
+        StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller"))
+                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .verify();
+    }
+
+    @Test
+    @DisplayName("an event's group needs no friendship between its members")
+    void requireFriendsInDirect_shouldCompleteWithoutAsking_forAnEventGroup() {
+        ConversationDetail group = new ConversationDetail("conv-2", List.of("caller", "stranger"), ConversationType.EVENT,
+                List.of(), 0, "Quiz", "event-1");
+
+        StepVerifier.create(chatService.requireFriendsInDirect(group, "caller")).verifyComplete();
+
+        verify(friendships, never()).areFriends(anyString(), anyString());
     }
 
     @Test

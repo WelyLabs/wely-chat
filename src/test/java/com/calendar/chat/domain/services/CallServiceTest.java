@@ -96,6 +96,7 @@ class CallServiceTest {
         lenient().when(noticeFormatter.format(any())).thenReturn("📞 Call");
         lenient().when(chatService.postConversationNotice(anyString(), anyString(), anyString()))
                 .thenReturn(Mono.just(Message.system("notice", "📞 Call", NOW)));
+        lenient().when(chatService.requireFriendsInDirect(any(), anyString())).thenReturn(Mono.empty());
     }
 
     private static ConversationDetail conversation(String... members) {
@@ -217,6 +218,22 @@ class CallServiceTest {
         StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
                 .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
                         .isEqualTo(ChatErrorCode.CONVERSATION_READ_ONLY));
+
+        verifyNoInteractions(callRepository, callBroadcaster);
+    }
+
+    @Test
+    @DisplayName("nobody rings a private conversation with someone who is not their friend")
+    void start_shouldRefuseWithFriendshipRequired_andRingNobody_whenTheyAreNotFriends() {
+        ConversationDetail direct = new ConversationDetail("conv-1", List.of("alice", "bob"), ConversationType.DIRECT,
+                List.of(), 0, null, null);
+        when(chatRepository.findById("conv-1", "alice")).thenReturn(Mono.just(direct));
+        when(chatService.requireFriendsInDirect(direct, "alice"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED)));
+
+        StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
+                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
+                        .isEqualTo(ChatErrorCode.FRIENDSHIP_REQUIRED));
 
         verifyNoInteractions(callRepository, callBroadcaster);
     }

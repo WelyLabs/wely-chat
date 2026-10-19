@@ -97,6 +97,13 @@ public enum ChatErrorCode {
             "The other participant deleted their account: this conversation can be read, not written to.",
             HttpStatus.CONFLICT),
 
+    /** A private conversation is opened, written to and called in between friends only. */
+    FRIENDSHIP_REQUIRED(
+            "CHT-BUS-013",
+            "Friends only",
+            "A private conversation is only open between friends.",
+            HttpStatus.FORBIDDEN),
+
     MEDIA_UNAVAILABLE(
             "CHT-TEC-001",
             "Photo storage unavailable",

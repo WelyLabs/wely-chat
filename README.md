@@ -282,6 +282,7 @@ Un appel appartient à une conversation, directe ou le groupe d'un événement :
 | `CHT-BUS-010` | 403 | Piste qui n'est pas publiée dans cet appel |
 | `CHT-BUS-011` | 410 | Account deleted: its writes and new streams are refused |
 | `CHT-BUS-012` | 409 | Read-only private conversation: the other participant deleted their account |
+| `CHT-BUS-013` | 403 | Friends only: a private conversation is opened, written to and called in between friends |
 | `CHT-TEC-001` | 502 | wely-media injoignable ou en erreur |
 | `CHT-TEC-002` | 502 | Cloudflare Realtime injoignable, en erreur ou non configuré |
 | `CHT-TEC-003` | 502 | wely-users' list of deleted accounts unreadable or not configured (reconciliation only, never sent to a client) |
@@ -335,6 +336,7 @@ client peut tester et un `timestamp` :
 | `USERS_API_URL` | wely-users' in-cluster URL, read by the reconciliation (`http://localhost:8082` in the `dev` profile). Empty by default: the service starts, each pass fails with `CHT-TEC-003` |
 | `DELETED_USERS_READER_SECRET` | Reader secret of wely-users' deleted-accounts list, sent in `X-Internal-Secret`; distinct from `MEDIA_API_SECRET`. Empty by default, same effect as above |
 | `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | `true` by default; `false` stops the reconciliation loop |
+| `FRIENDSHIP_STATE_CONSUMER_ENABLED` | `true` by default; `false` unbinds the `FRIENDSHIP_STATE` consumer, so no new private conversation can be opened |
 
 ---
 
@@ -399,6 +401,22 @@ Un utilisateur est **en ligne tant qu'il a un flux `chat.stream` ouvert**, sur n
 - **Confidentialité** — `GET /presence/{userId}` ne répond que si l'appelant partage une conversation avec cette personne. Sinon `CHT-BUS-003`, identique pour un utilisateur inconnu, pour qu'on ne puisse pas sonder la présence de n'importe qui.
 
 Le front relit la présence toutes les 30 s pendant qu'une conversation est ouverte et affiche « En ligne », « Vu à 14:32 », « Vu hier à 09:05 » ou « Vu le 3 oct. ».
+
+## Private conversations between friends
+
+A private conversation is opened, written to and called in only between two friends. wely-chat
+does not ask wely-social on each request: it keeps its own copy of the friendships, the
+`friendships` collection, fed by wely-social's compacted `FRIENDSHIP_STATE` topic
+(`FriendshipStateConsumer`). A value makes the pair friends under a version guard; a tombstone
+ends the friendship. The group reads from the earliest offset, so a new deployment rebuilds the
+whole copy in a few seconds.
+
+- Opening a conversation with someone who is not a friend answers `CHT-BUS-013` and creates nothing.
+- A conversation with a former friend stays readable; writing, sending a photo or calling there answers `CHT-BUS-013`.
+- Event groups need no friendship between their members.
+
+The demo friendships are written straight into Neo4j, so they never reach the topic: the nightly
+demo reset (wely-gitops-infra) seeds them into `friendships` too.
 
 ## Account deletion
 

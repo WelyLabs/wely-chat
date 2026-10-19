@@ -65,7 +65,7 @@ public class PhotoService {
                 .then(Mono.defer(() -> requireMember(conversationId, senderId)))
                 .flatMap(conversation -> conversation.isReadOnly()
                         ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
-                        : Mono.just(conversation))
+                        : chatService.requireFriendsInDirect(conversation, senderId).thenReturn(conversation))
                 // Deferred: built eagerly, an outsider's upload would be sent to wely-media before membership was checked.
                 .then(Mono.defer(() -> {
                     String messageId = UUID.randomUUID().toString();

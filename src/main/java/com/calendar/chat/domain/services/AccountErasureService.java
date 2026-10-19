@@ -18,16 +18,18 @@ public class AccountErasureService {
     private final PresenceRepository presenceRepository;
     private final CallService callService;
     private final LiveSessions liveSessions;
+    private final FriendshipService friendships;
     private final Clock clock;
 
     public AccountErasureService(DeletedUserMarkers markers, ChatRepository chatRepository,
                                  PresenceRepository presenceRepository, CallService callService,
-                                 LiveSessions liveSessions, Clock clock) {
+                                 LiveSessions liveSessions, FriendshipService friendships, Clock clock) {
         this.markers = markers;
         this.chatRepository = chatRepository;
         this.presenceRepository = presenceRepository;
         this.callService = callService;
         this.liveSessions = liveSessions;
+        this.friendships = friendships;
         this.clock = clock;
     }
 
@@ -42,6 +44,7 @@ public class AccountErasureService {
                 .then(Mono.defer(() -> chatRepository.forgetClosedGroupsOrganizedBy(userId)))
                 .then(Mono.defer(() -> callService.removeUser(userId)))
                 .then(Mono.defer(() -> presenceRepository.forget(userId)))
+                .then(Mono.defer(() -> friendships.forget(userId)))
                 .then(Mono.defer(() -> markers.markErased(userId, clock.instant())))
                 .doOnSuccess(done -> LOG.log(System.Logger.Level.INFO, "Account {0} erased", userId));
     }

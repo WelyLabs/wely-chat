@@ -11,11 +11,13 @@ import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
 import com.calendar.chat.domain.services.CallService;
 import com.calendar.chat.domain.services.EventGroupService;
+import com.calendar.chat.domain.services.FriendshipService;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.PresenceService;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
+import com.calendar.chat.domain.ports.FriendshipDirectory;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
 import com.calendar.chat.domain.services.AccountErasureService;
 import com.calendar.chat.domain.services.AccountGuard;
@@ -40,7 +42,8 @@ class ChatApplicationConfigTest {
         ChatRepository repository = mock(ChatRepository.class);
         MessageBroadcaster broadcaster = mock(MessageBroadcaster.class);
 
-        ChatService service = config.chatService(repository, broadcaster, mock(AccountGuard.class));
+        ChatService service = config.chatService(repository, broadcaster, mock(AccountGuard.class),
+                mock(FriendshipService.class));
 
         // No @Service on ChatService: that is what makes it testable without a Spring
         // context and keeps the domain free of framework annotations.
@@ -103,6 +106,17 @@ class ChatApplicationConfigTest {
     }
 
     @Test
+    void friendshipService_shouldBuildTheDomainServiceFromItsPort_withoutTouchingIt() {
+        FriendshipDirectory directory = mock(FriendshipDirectory.class);
+        AccountGuard guard = mock(AccountGuard.class);
+
+        FriendshipService service = config.friendshipService(directory, guard);
+
+        assertThat(service).isNotNull();
+        verifyNoInteractions(directory, guard);
+    }
+
+    @Test
     void liveSessions_shouldBuildTheDomainService() {
         AccountGuard guard = mock(AccountGuard.class);
 
@@ -117,7 +131,7 @@ class ChatApplicationConfigTest {
         PresenceRepository presence = mock(PresenceRepository.class);
 
         AccountErasureService service = config.accountErasureService(markers, chats, presence,
-                mock(CallService.class), mock(LiveSessions.class));
+                mock(CallService.class), mock(LiveSessions.class), mock(FriendshipService.class));
 
         assertThat(service).isNotNull();
         verifyNoInteractions(markers, chats, presence);

@@ -3,6 +3,7 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
@@ -26,17 +27,22 @@ public class ChatService {
     private final ChatRepository chatRepository;
     private final MessageBroadcaster messageBroadcaster;
     private final AccountGuard guard;
+    private final FriendshipService friendships;
     private final Clock clock;
 
     public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster, AccountGuard guard,
-                       Clock clock) {
+                       FriendshipService friendships, Clock clock) {
         this.chatRepository = chatRepository;
         this.messageBroadcaster = messageBroadcaster;
         this.guard = guard;
+        this.friendships = friendships;
         this.clock = clock;
     }
 
-    /** The private conversation with a friend, created on first use but never for or with a deleted account. */
+    /**
+     * The private conversation with a friend, created on first use, only between friends and never for or
+     * with a deleted account. An existing one stays readable after the friendship ends.
+     */
     public Mono<ConversationDetail> readOrCreateConversation(String requesterId, String friendId) {
         List<String> participantIds = List.of(requesterId, friendId);
         return guard.deletedAmong(participantIds)
@@ -47,7 +53,8 @@ public class ChatService {
                     Mono<ConversationDetail> existing = chatRepository.findByParticipantIds(participantIds);
                     return deleted.contains(friendId)
                             ? existing.switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
-                            : existing.switchIfEmpty(Mono.defer(() -> chatRepository.saveWithInitialBucket(participantIds)));
+                            : existing.switchIfEmpty(Mono.defer(() -> friendships.requireFriends(requesterId, friendId)
+                                    .then(Mono.defer(() -> chatRepository.saveWithInitialBucket(participantIds)))));
                 });
     }
 
@@ -63,13 +70,26 @@ public class ChatService {
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(conversation -> conversation.isReadOnly()
                         ? Mono.<List<String>>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
-                        : chatRepository.postMessage(message))
+                        : requireFriendsInDirect(conversation, message.senderId())
+                                .then(Mono.defer(() -> chatRepository.postMessage(message))))
                 .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
                 // Recipients come from the stored conversation, never from the client's receiverId.
                 .flatMapMany(memberIds -> liveRecipients(message, memberIds, message.senderId()))
                 .concatMap(recipientId -> messageBroadcaster.broadcast(
                         new LiveMessage(addressedTo(message, recipientId), BroadcastKind.NEW)))
                 .then(Mono.just(message));
+    }
+
+    /** Completes for a group, or for a private conversation between friends; FRIENDSHIP_REQUIRED otherwise. */
+    public Mono<Void> requireFriendsInDirect(ConversationDetail conversation, String userId) {
+        if (conversation.getType() != ConversationType.DIRECT) {
+            return Mono.empty();
+        }
+        String otherId = conversation.getParticipantIds().stream()
+                .filter(id -> !id.equals(userId))
+                .findFirst()
+                .orElse(null);
+        return friendships.requireFriends(userId, otherId);
     }
 
     /** Pushes a stored change to the other members of a conversation {@code exceptUserId} belongs to. */

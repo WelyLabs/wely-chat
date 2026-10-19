@@ -81,6 +81,7 @@ class PhotoServiceTest {
         lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
         lenient().when(mediaStore.urls(any())).thenAnswer(call -> Mono.just(signedUrls(call.getArgument(0))));
         lenient().when(chatRepository.findMessage(anyString(), anyString())).thenReturn(Mono.empty());
+        lenient().when(chatService.requireFriendsInDirect(any(), anyString())).thenReturn(Mono.empty());
     }
 
     private static Map<String, String> signedUrls(Collection<String> keys) {
@@ -159,6 +160,23 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof ChatException chat
                         && chat.getErrorCode() == ChatErrorCode.CONVERSATION_READ_ONLY)
+                .verify();
+        verify(mediaStore, never()).store(any(), any(), any());
+        verify(chatService, never()).sendMessage(any());
+    }
+
+    @Test
+    @DisplayName("nothing reaches wely-media for a private conversation with someone who is not a friend")
+    void send_shouldRefuseWithFriendshipRequired_beforeUploading_whenTheyAreNotFriends() {
+        ConversationDetail direct = new ConversationDetail("c1", List.of("alice", "bob"), ConversationType.DIRECT,
+                List.of(), 0, null, null);
+        member(direct, "alice");
+        when(chatService.requireFriendsInDirect(direct, "alice"))
+                .thenReturn(Mono.error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED)));
+
+        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
+                .expectErrorMatches(error -> error instanceof ChatException chat
+                        && chat.getErrorCode() == ChatErrorCode.FRIENDSHIP_REQUIRED)
                 .verify();
         verify(mediaStore, never()).store(any(), any(), any());
         verify(chatService, never()).sendMessage(any());

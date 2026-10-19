@@ -46,13 +46,15 @@ class AccountErasureServiceTest {
     private CallService callService;
     @Mock
     private LiveSessions liveSessions;
+    @Mock
+    private FriendshipService friendships;
 
     private AccountErasureService service;
 
     @BeforeEach
     void setUp() {
         service = new AccountErasureService(markers, chatRepository, presenceRepository, callService, liveSessions,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                friendships, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     /** Lenient: a failing step leaves the later ones unused. */
@@ -64,6 +66,7 @@ class AccountErasureServiceTest {
         lenient().when(chatRepository.forgetClosedGroupsOrganizedBy(anyString())).thenReturn(Mono.empty());
         lenient().when(callService.removeUser(anyString())).thenReturn(Mono.empty());
         lenient().when(presenceRepository.forget(anyString())).thenReturn(Mono.empty());
+        lenient().when(friendships.forget(anyString())).thenReturn(Mono.empty());
         lenient().when(markers.markErased(anyString(), any())).thenReturn(Mono.empty());
     }
 
@@ -74,7 +77,7 @@ class AccountErasureServiceTest {
 
         StepVerifier.create(service.erase(USER, DELETED_AT)).verifyComplete();
 
-        InOrder order = inOrder(markers, liveSessions, chatRepository, callService, presenceRepository);
+        InOrder order = inOrder(markers, liveSessions, chatRepository, callService, presenceRepository, friendships);
         order.verify(markers).markDeleted(USER, DELETED_AT);
         order.verify(liveSessions).close(USER);
         order.verify(chatRepository).anonymizeSender(USER);
@@ -82,6 +85,7 @@ class AccountErasureServiceTest {
         order.verify(chatRepository).forgetClosedGroupsOrganizedBy(USER);
         order.verify(callService).removeUser(USER);
         order.verify(presenceRepository).forget(USER);
+        order.verify(friendships).forget(USER);
         order.verify(markers).markErased(USER, NOW);
     }
 
@@ -108,6 +112,7 @@ class AccountErasureServiceTest {
         verify(chatRepository, never()).markDirectConversationsReadOnly(any());
         verify(callService, never()).removeUser(any());
         verify(presenceRepository, never()).forget(any());
+        verify(friendships, never()).forget(any());
         verify(markers, never()).markErased(any(), any());
     }
 
@@ -118,7 +123,7 @@ class AccountErasureServiceTest {
 
         StepVerifier.create(service.erase(USER, DELETED_AT)).expectError(ChatException.class).verify();
 
-        verifyNoInteractions(liveSessions, chatRepository, callService, presenceRepository);
+        verifyNoInteractions(liveSessions, chatRepository, callService, presenceRepository, friendships);
         verify(markers, never()).markErased(any(), any());
     }
 

@@ -5,6 +5,7 @@ import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
+import com.calendar.chat.domain.ports.FriendshipDirectory;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
 import com.calendar.chat.domain.services.AccountErasureService;
@@ -16,6 +17,7 @@ import com.calendar.chat.domain.ports.PresenceRepository;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.AccountReconciliationService;
 import com.calendar.chat.domain.services.EventGroupService;
+import com.calendar.chat.domain.services.FriendshipService;
 import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
@@ -43,6 +45,11 @@ public class ChatApplicationConfig {
     }
 
     @Bean
+    public FriendshipService friendshipService(FriendshipDirectory directory, AccountGuard accountGuard) {
+        return new FriendshipService(directory, accountGuard);
+    }
+
+    @Bean
     public LiveSessions liveSessions(AccountGuard accountGuard) {
         return new LiveSessions(accountGuard);
     }
@@ -50,8 +57,9 @@ public class ChatApplicationConfig {
     @Bean
     public ChatService chatService(ChatRepository chatRepository,
                                   MessageBroadcaster messageBroadcaster,
-                                  AccountGuard accountGuard) {
-        return new ChatService(chatRepository, messageBroadcaster, accountGuard, Clock.systemUTC());
+                                  AccountGuard accountGuard,
+                                  FriendshipService friendshipService) {
+        return new ChatService(chatRepository, messageBroadcaster, accountGuard, friendshipService, Clock.systemUTC());
     }
 
     @Bean
@@ -87,9 +95,10 @@ public class ChatApplicationConfig {
     @Bean
     public AccountErasureService accountErasureService(DeletedUserMarkers markers, ChatRepository chatRepository,
                                                        PresenceRepository presenceRepository, CallService callService,
-                                                       LiveSessions liveSessions) {
+                                                       LiveSessions liveSessions,
+                                                       FriendshipService friendshipService) {
         return new AccountErasureService(markers, chatRepository, presenceRepository, callService, liveSessions,
-                Clock.systemUTC());
+                friendshipService, Clock.systemUTC());
     }
 
     @Bean
