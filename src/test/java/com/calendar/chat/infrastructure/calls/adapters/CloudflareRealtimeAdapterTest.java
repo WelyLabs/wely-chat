@@ -1,5 +1,6 @@
 package com.calendar.chat.infrastructure.calls.adapters;
 
+import com.calendar.chat.configuration.CallsClientConfig;
 import com.calendar.chat.domain.models.LocalTrack;
 import com.calendar.chat.domain.models.RelaySubscription;
 import com.calendar.chat.domain.models.RemoteTrack;
@@ -27,6 +28,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -79,7 +81,7 @@ class CloudflareRealtimeAdapterTest {
     void newSession_shouldCreateASessionInTheApp() {
         answer = json(HttpStatus.CREATED, "{\"sessionId\":\"s-1\"}");
 
-        StepVerifier.create(adapter.newSession()).expectNext("s-1").verifyComplete();
+        StepVerifier.create(adapter.newSession()).expectNext("s-1").expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getMethod()).isEqualTo(HttpMethod.POST);
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/new");
@@ -87,7 +89,7 @@ class CloudflareRealtimeAdapterTest {
 
     @Test
     void newSession_shouldFail_withoutASessionInTheAnswer() {
-        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify();
+        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -97,7 +99,7 @@ class CloudflareRealtimeAdapterTest {
         StepVerifier.create(adapter.publish("s-1", new SessionDescription("offer", "v=0 o"),
                         List.of(new LocalTrack("0", "audio"))))
                 .expectNext(SessionDescription.answer("v=0 a"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-1/tracks/new");
         assertThat(sentBody())
@@ -117,7 +119,7 @@ class CloudflareRealtimeAdapterTest {
                         List.of(new RemoteTrack("s-alice", "camera", VideoLayer.FULL, null))))
                 .expectNext(new RelaySubscription(new SessionDescription("offer", "v=0 r"), true,
                         List.of(new RemoteTrack("s-alice", "camera", null, "3"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sentBody())
                 .doesNotContain("sessionDescription")
@@ -132,12 +134,12 @@ class CloudflareRealtimeAdapterTest {
 
         StepVerifier.create(adapter.subscribe("s-1", List.of()))
                 .expectNext(new RelaySubscription(null, false, List.of()))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void renegotiate_shouldPutTheAnswer() {
-        StepVerifier.create(adapter.renegotiate("s-1", SessionDescription.answer("v=0 b"))).verifyComplete();
+        StepVerifier.create(adapter.renegotiate("s-1", SessionDescription.answer("v=0 b"))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getMethod()).isEqualTo(HttpMethod.PUT);
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-1/renegotiate");
@@ -147,7 +149,7 @@ class CloudflareRealtimeAdapterTest {
     @Test
     void updateLayers_shouldPutTheTracksWithTheirMid() {
         StepVerifier.create(adapter.updateLayers("s-1",
-                List.of(new RemoteTrack("s-alice", "camera", VideoLayer.QUARTER, "3")))).verifyComplete();
+                List.of(new RemoteTrack("s-alice", "camera", VideoLayer.QUARTER, "3")))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-1/tracks/update");
         assertThat(sentBody()).contains("\"mid\":\"3\"").contains("\"preferredRid\":\"q\"");
@@ -155,7 +157,7 @@ class CloudflareRealtimeAdapterTest {
 
     @Test
     void closeTracks_shouldForceTheClose() {
-        StepVerifier.create(adapter.closeTracks("s-1", List.of("3"))).verifyComplete();
+        StepVerifier.create(adapter.closeTracks("s-1", List.of("3"))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getURI().toString()).isEqualTo(BASE + "/apps/app-1/sessions/s-1/tracks/close");
         assertThat(sentBody()).contains("\"force\":true").contains("\"mid\":\"3\"");
@@ -169,7 +171,7 @@ class CloudflareRealtimeAdapterTest {
                            {"location":"remote","mid":"3","trackName":"camera","sessionId":"s-alice","status":"active"},
                            {"location":"remote","mid":"4","trackName":"audio","sessionId":"s-gone","status":"inactive"}]}"""));
 
-        StepVerifier.create(adapter.closeSession("s-bob")).verifyComplete();
+        StepVerifier.create(adapter.closeSession("s-bob")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent).hasSize(2);
         assertThat(sent.get(0).getMethod()).isEqualTo(HttpMethod.GET);
@@ -186,7 +188,7 @@ class CloudflareRealtimeAdapterTest {
     void closeSession_shouldCloseNothing_whenNoTrackIsOpen() {
         answers.add(json(HttpStatus.OK, "{\"tracks\":[]}"));
 
-        StepVerifier.create(adapter.closeSession("s-bob")).verifyComplete();
+        StepVerifier.create(adapter.closeSession("s-bob")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent).hasSize(1);
     }
@@ -197,7 +199,7 @@ class CloudflareRealtimeAdapterTest {
 
         StepVerifier.create(adapter.closeSession("s-bob"))
                 .expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         assertThat(sent).hasSize(1);
     }
 
@@ -205,7 +207,7 @@ class CloudflareRealtimeAdapterTest {
     void anyCall_shouldFail_whenRealtimeAnswersAnErrorStatus() {
         answer = json(HttpStatus.UNAUTHORIZED, "{\"errorCode\":\"unauthorized\"}");
 
-        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify();
+        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -214,7 +216,7 @@ class CloudflareRealtimeAdapterTest {
 
         StepVerifier.create(adapter.renegotiate("s-1", SessionDescription.answer("x")))
                 .expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -226,19 +228,38 @@ class CloudflareRealtimeAdapterTest {
         adapter = new CloudflareRealtimeAdapter(broken, "app-1", Mappers.getMapper(RealtimeMapper.class));
 
         StepVerifier.create(adapter.newSession())
-                .verifyErrorSatisfies(error -> {
+                .consumeErrorWith(error -> {
                     assertThat(unavailable(error)).isTrue();
                     // Kept as the cause, so the ERROR log shows why Realtime could not be reached.
                     assertThat(error).hasRootCause(refused);
-                });
+                }).verify(Duration.ofSeconds(10));
     }
 
     @Test
     void anyCall_shouldFailWithoutCallingOut_whenNoAppIsConfigured() {
         adapter = adapterFor("");
 
-        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify();
+        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify(Duration.ofSeconds(10));
 
         assertThat(sent).isEmpty();
+    }
+
+    private static String stackTraceOf(Throwable failure) {
+        java.io.StringWriter trace = new java.io.StringWriter();
+        failure.printStackTrace(new java.io.PrintWriter(trace));
+        return trace.toString();
+    }
+
+    @Test
+    @DisplayName("a real failed call, kept as the cause, never prints the app secret: it travels in a header")
+    void newSession_shouldNotLogTheAppSecret_ofARealFailedCall() {
+        String secret = "s3cr3t";
+        WebClient client = new CallsClientConfig().realtimeWebClient("http://unreachable.invalid/v1", secret);
+        CloudflareRealtimeAdapter real = new CloudflareRealtimeAdapter(client, "app-1", Mappers.getMapper(RealtimeMapper.class));
+
+        StepVerifier.create(real.newSession())
+                .consumeErrorWith(error -> assertThat(stackTraceOf(error))
+                        .contains("unreachable.invalid").doesNotContain(secret))
+                .verify(java.time.Duration.ofSeconds(10));
     }
 }

@@ -30,6 +30,7 @@ import reactor.test.StepVerifier;
 import java.util.ArrayList;
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -142,12 +143,12 @@ class MongoChatRepositoryAdapterIntegrationTest {
                         Flux.range(1, 10)
                                 .concatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(bucketCount(conversation.getId())).isEqualTo(1);
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
                 .assertNext(bucket -> assertThat(bucket.messages()).hasSize(10))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -161,21 +162,21 @@ class MongoChatRepositoryAdapterIntegrationTest {
                         Flux.range(1, MessageBucketEntity.MAX_MESSAGES + 1)
                                 .concatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(bucketCount(conversation.getId())).isEqualTo(2);
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
                 .assertNext(bucket -> assertThat(bucket.messages())
                         .hasSize(MessageBucketEntity.MAX_MESSAGES))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 1, ALICE))
                 .assertNext(bucket -> {
                     assertThat(bucket.messages()).hasSize(1);
                     assertThat(bucket.messages().getFirst().content()).isEqualTo("message 51");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -192,7 +193,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                         Flux.range(1, total)
                                 .flatMap(i -> post(
                                         messageFrom(ALICE, conversation.getId(), "message " + i)), 16))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         long stored = Flux.range(0, 10)
                 .concatMap(index ->
@@ -213,11 +214,11 @@ class MongoChatRepositoryAdapterIntegrationTest {
         Message message = new Message("m-42", ALICE, "Alice", BOB,
                 conversation.getId(), "hello", Instant.now());
 
-        StepVerifier.create(post(message)).verifyComplete();
+        StepVerifier.create(post(message)).expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
                 .assertNext(bucket -> assertThat(bucket.messages().getFirst().id()).isEqualTo("m-42"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -228,11 +229,11 @@ class MongoChatRepositoryAdapterIntegrationTest {
         ConversationDetail conversation = aConversation();
 
         StepVerifier.create(post(
-                        messageFrom(MALLORY, conversation.getId(), "let me in"))).verifyComplete();
+                        messageFrom(MALLORY, conversation.getId(), "let me in"))).expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(conversation.getId(), 0, ALICE))
                 .assertNext(bucket -> assertThat(bucket.messages()).isEmpty())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -240,10 +241,10 @@ class MongoChatRepositoryAdapterIntegrationTest {
     void findById_shouldRejectANonParticipant() {
         ConversationDetail conversation = aConversation();
 
-        StepVerifier.create(adapter.findById(conversation.getId(), MALLORY)).verifyComplete();
+        StepVerifier.create(adapter.findById(conversation.getId(), MALLORY)).expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findById(conversation.getId(), ALICE))
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -252,8 +253,8 @@ class MongoChatRepositoryAdapterIntegrationTest {
         ConversationDetail conversation = aConversation();
         post(messageFrom(ALICE, conversation.getId(), "hi")).block();
 
-        StepVerifier.create(adapter.findUserConversations(ALICE)).expectNextCount(1).verifyComplete();
-        StepVerifier.create(adapter.findUserConversations(MALLORY)).verifyComplete();
+        StepVerifier.create(adapter.findUserConversations(ALICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findUserConversations(MALLORY)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -266,7 +267,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.findUserConversations(ALICE))
                 .assertNext(summary -> assertThat(summary.lastMessage().content()).isEqualTo("second"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -282,7 +283,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(mongoTemplate.insert(duplicate))
                 .expectError(org.springframework.dao.DuplicateKeyException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- event groups -----------------------------------------------------
@@ -294,7 +295,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
     void findByParticipantIds_shouldIgnoreEventGroups() {
         adapter.saveEventGroup(GROUP).block();
 
-        StepVerifier.create(adapter.findByParticipantIds(List.of(ALICE, BOB))).verifyComplete();
+        StepVerifier.create(adapter.findByParticipantIds(List.of(ALICE, BOB))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -309,7 +310,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(group.getParticipantIds()).containsExactly(ALICE, BOB, "carol", "dave");
                     assertThat(group.getType()).isEqualTo(ConversationType.EVENT);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -318,7 +319,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         adapter.saveEventGroup(GROUP).block();
         adapter.saveEventGroup(new EventGroup("event-1", "Board games", List.of(ALICE, BOB), 3)).block();
 
-        StepVerifier.create(adapter.findByEventId("event-1", "carol")).verifyComplete();
+        StepVerifier.create(adapter.findByEventId("event-1", "carol")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -328,12 +329,12 @@ class MongoChatRepositoryAdapterIntegrationTest {
         String groupId = adapter.findByEventId("event-1", ALICE).block().getId();
         adapter.postMessage(messageFrom(ALICE, groupId, "who brings the cards?")).block();
 
-        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).expectNext(groupId).verifyComplete();
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).expectNext(groupId).expectComplete().verify(Duration.ofSeconds(10));
         adapter.saveEventGroup(new EventGroup("event-1", "Board games", List.of(ALICE, BOB), 4)).block();
 
-        StepVerifier.create(adapter.findByEventId("event-1", ALICE)).verifyComplete();
-        StepVerifier.create(adapter.findUserConversations(ALICE)).verifyComplete();
-        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).verifyComplete();
+        StepVerifier.create(adapter.findByEventId("event-1", ALICE)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findUserConversations(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.closeEventGroup("event-1", 5)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -344,11 +345,11 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.postMessage(messageFrom(ALICE, groupId, "who brings the cards?")))
                 .expectNext(List.of(ALICE, BOB, "carol"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.findBucketByConversationIdAndBucketIndex(groupId, 0, BOB))
                 .assertNext(bucket -> assertThat(bucket.messages()).hasSize(1))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -365,7 +366,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(summary.eventId()).isEqualTo("event-1");
                     assertThat(summary.title()).isEqualTo("Board games");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -387,10 +388,10 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(marked.content()).isEqualTo("le podium");
                     assertThat(marked.photo()).isEqualTo(Photo.REMOVED);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findUserConversations(BOB))
                 .assertNext(summary -> assertThat(summary.lastMessage().photo()).isEqualTo(Photo.REMOVED))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -410,8 +411,8 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(read.content()).isEqualTo("le podium");
                     assertThat(read.photo()).isEqualTo(Photo.REMOVED);
                 })
-                .verifyComplete();
-        StepVerifier.create(adapter.findMessage(conversation.getId(), "missing")).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findMessage(conversation.getId(), "missing")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- system messages --------------------------------------------------
@@ -427,7 +428,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(posted.duplicate()).isFalse();
                     assertThat(posted.participantIds()).containsExactly(ALICE, BOB, "carol");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.findByEventId("event-1", BOB))
                 .assertNext(group -> {
@@ -437,10 +438,10 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(read.type()).isEqualTo(MessageType.SYSTEM);
                     assertThat(read.senderId()).isEqualTo(Message.SYSTEM_SENDER_ID);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findUserConversations(BOB))
                 .assertNext(summary -> assertThat(summary.lastMessage().type()).isEqualTo(MessageType.SYSTEM))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -452,10 +453,10 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.postSystemMessage("event-1", notice))
                 .assertNext(posted -> assertThat(posted.duplicate()).isTrue())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findByEventId("event-1", ALICE))
                 .assertNext(group -> assertThat(group.getMessages()).hasSize(1))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -466,16 +467,16 @@ class MongoChatRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.postSystemMessageToConversation(direct.getId(), notice))
                 .assertNext(posted -> assertThat(posted.participantIds()).containsExactlyInAnyOrder(ALICE, BOB))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.postSystemMessageToConversation(direct.getId(), notice))
                 .assertNext(posted -> assertThat(posted.duplicate()).isTrue())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void postSystemMessage_shouldBeEmpty_whenTheEventHasNoGroup() {
         StepVerifier.create(adapter.postSystemMessage("unknown", Message.system("n", "x", Instant.now())))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -491,7 +492,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         assertThat(bucket.getList("messages", org.bson.Document.class).getFirst()).doesNotContainKey("ty");
         StepVerifier.create(adapter.findById(conversation.getId(), BOB))
                 .assertNext(read -> assertThat(read.getMessages().getFirst().type()).isEqualTo(MessageType.TEXT))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- account erasure --------------------------------------------------
@@ -563,7 +564,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(bobPreview.content()).isEqualTo("last from alice");
                     assertThat(byId.get(withCarol.getId()).lastMessage().senderName()).isEqualTo("carol");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -572,11 +573,11 @@ class MongoChatRepositoryAdapterIntegrationTest {
         ConversationDetail withBob = conversationOf(ALICE, BOB);
         post(messageFrom(ALICE, withBob.getId(), "hi")).block();
 
-        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(1L).verifyComplete();
-        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(1L).verifyComplete();
+        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(0L).verifyComplete();
-        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(messageBucketRepository.clearSenderName(ALICE)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(conversationRepository.clearLastSenderName(ALICE)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -606,7 +607,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         StepVerifier.create(mongoTemplate.indexOps(MessageBucketEntity.class).getIndexInfo()
                         .map(index -> index.getName()).collectList())
                 .assertNext(names -> assertThat(names).contains("messages_sender", "conversation_bucket_unique"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         org.bson.Document plan = mongoTemplate.getCollection("message_buckets")
                 .flatMap(collection -> reactor.core.publisher.Mono.from(collection
                         .find(new org.bson.Document("messages", new org.bson.Document("$elemMatch",
@@ -628,7 +629,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
         assertThat(adapter.findById(withBob.getId(), BOB).block().isReadOnly()).isTrue();
         assertThat(adapter.findById(bobAndCarol.getId(), BOB).block().isReadOnly()).isFalse();
         assertThat(adapter.findByEventId("event-1", BOB).block().isReadOnly()).isFalse();
-        StepVerifier.create(conversationRepository.markDirectReadOnly(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(conversationRepository.markDirectReadOnly(ALICE)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -643,7 +644,7 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(readOnly.get(withAlice.getId())).isTrue();
                     assertThat(readOnly.get(withCarol.getId())).isFalse();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -659,8 +660,8 @@ class MongoChatRepositoryAdapterIntegrationTest {
                     assertThat(found.getMessages()).isNull();
                     assertThat(found.isReadOnly()).isTrue();
                 })
-                .verifyComplete();
-        StepVerifier.create(adapter.findMembership(withBob.getId(), MALLORY)).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findMembership(withBob.getId(), MALLORY)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     private org.bson.Document storedGroup(String eventId) {
@@ -697,6 +698,6 @@ class MongoChatRepositoryAdapterIntegrationTest {
         assertThat(storedGroup("closed-by-bob").getString("title")).isEqualTo("Bob's party");
         assertThat(storedGroup("live").getString("title")).isEqualTo("Board games");
         assertThat(storedGroup("live").getString("organizerId")).isEqualTo(ALICE);
-        StepVerifier.create(conversationRepository.forgetClosedGroupsOrganizedBy(ALICE)).expectNext(0L).verifyComplete();
+        StepVerifier.create(conversationRepository.forgetClosedGroupsOrganizedBy(ALICE)).expectNext(0L).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

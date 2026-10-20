@@ -15,6 +15,7 @@ import reactor.test.StepVerifier;
 
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -34,7 +35,7 @@ class AccountGuardTest {
     void requireActive_shouldComplete_whenNoMarkerExists() {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(false));
 
-        StepVerifier.create(guard().requireActive("alice")).verifyComplete();
+        StepVerifier.create(guard().requireActive("alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -44,7 +45,7 @@ class AccountGuardTest {
         StepVerifier.create(guard().requireActive("alice"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -54,7 +55,7 @@ class AccountGuardTest {
         StepVerifier.create(guard().requireActive("alice"))
                 .expectErrorMatches(error -> error instanceof TechnicalException technical
                         && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -62,8 +63,8 @@ class AccountGuardTest {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
         when(markers.isDeleted("bob")).thenReturn(Mono.just(false));
 
-        StepVerifier.create(guard().isDeleted("alice")).expectNext(true).verifyComplete();
-        StepVerifier.create(guard().isDeleted("bob")).expectNext(false).verifyComplete();
+        StepVerifier.create(guard().isDeleted("alice")).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(guard().isDeleted("bob")).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -72,15 +73,15 @@ class AccountGuardTest {
 
         StepVerifier.create(guard().deletedAmong(List.of("alice", "bob", "alice")))
                 .expectNext(Set.of("bob"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers).findDeletedAmong(List.of("alice", "bob"));
     }
 
     @Test
     void deletedAmong_shouldNotQuery_whenGivenNoIds() {
-        StepVerifier.create(guard().deletedAmong(List.of())).expectNext(Set.of()).verifyComplete();
-        StepVerifier.create(guard().deletedAmong(null)).expectNext(Set.of()).verifyComplete();
+        StepVerifier.create(guard().deletedAmong(List.of())).expectNext(Set.of()).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(guard().deletedAmong(null)).expectNext(Set.of()).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(markers);
     }

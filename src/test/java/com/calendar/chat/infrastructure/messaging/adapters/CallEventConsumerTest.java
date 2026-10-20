@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Function;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -50,7 +51,7 @@ class CallEventConsumerTest {
 
     @Test
     void callEvents_shouldDispatchEveryRecord() {
-        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(payload("bob"));
         verify(broadcaster).accept(payload("carol"));
@@ -60,7 +61,7 @@ class CallEventConsumerTest {
     void callEvents_shouldKeepConsumingAfterAFailedRecord() {
         doThrow(new IllegalStateException("boom")).when(broadcaster).accept(payload("bob"));
 
-        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(record("bob"), record("carol")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(payload("carol"));
     }
@@ -72,7 +73,7 @@ class CallEventConsumerTest {
                 "conversationId":"conv-1","startedBy":"alice","media":"AUDIO","status":"RINGING",
                 "startedAt":"2026-10-15T18:00:00Z","memberIds":["alice","bob"],"participants":[]}}""";
 
-        StepVerifier.create(consumer.apply(Flux.just(MessageBuilder.withPayload(older.getBytes(StandardCharsets.UTF_8)).build()))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(MessageBuilder.withPayload(older.getBytes(StandardCharsets.UTF_8)).build()))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(new CallEventBroadcastDTO("RINGING", "bob", "alice",
                 new CallEventBroadcastDTO.CallDTO("call-1", "conv-1", "alice", null, "AUDIO", "RINGING", AT, null,
@@ -83,7 +84,7 @@ class CallEventConsumerTest {
     void callEvents_shouldSkipARecordItCannotRead() {
         Message<byte[]> garbage = MessageBuilder.withPayload("not json".getBytes(StandardCharsets.UTF_8)).build();
 
-        StepVerifier.create(consumer.apply(Flux.just(garbage, record("carol")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(garbage, record("carol")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster, times(1)).accept(any());
         verify(broadcaster).accept(payload("carol"));

@@ -39,6 +39,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -81,7 +82,7 @@ class CallControllerTest {
                     assertThat(dto.id()).isEqualTo("call-1");
                     assertThat(dto.startedByName()).isEqualTo("Alice");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -91,7 +92,7 @@ class CallControllerTest {
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -116,7 +117,7 @@ class CallControllerTest {
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -127,7 +128,7 @@ class CallControllerTest {
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_READ_ONLY)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -137,10 +138,10 @@ class CallControllerTest {
 
         StepVerifier.create(controller.live(jwt, "conv-1"))
                 .assertNext(response -> assertThat(response.getBody().id()).isEqualTo("call-1"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(controller.live(jwt, "conv-2"))
                 .assertNext(response -> assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -155,7 +156,7 @@ class CallControllerTest {
                             .satisfies(server -> assertThat(server.credential()).isEqualTo("c"));
                     assertThat(response.toString()).doesNotContain("s-bob").doesNotContain("s-alice");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -167,7 +168,7 @@ class CallControllerTest {
         StepVerifier.create(controller.publish(jwt, "call-1", new PublishRequest(new SessionDescriptionDTO("offer", "v=0 o"),
                         List.of(new PublishRequest.Track("0", "audio")))))
                 .expectNext(new SessionDescriptionDTO("answer", "v=0 a"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -186,7 +187,7 @@ class CallControllerTest {
                         new SubscribeRequest(List.of(new SubscribeRequest.Track("alice", "camera", "HALF")))))
                 .expectNext(new SubscriptionResponse(new SessionDescriptionDTO("offer", "v=0 r"), true,
                         List.of(new SubscriptionResponse.Track("3", "alice", "camera"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -201,7 +202,7 @@ class CallControllerTest {
         when(callService.renegotiate("bob", "call-1", SessionDescription.answer("v=0"))).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.renegotiate(jwt, "call-1", new SessionDescriptionDTO("answer", "v=0")))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -210,14 +211,14 @@ class CallControllerTest {
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(controller.layers(jwt, "call-1",
-                new LayersRequest(List.of(new LayersRequest.Choice("3", "alice", "camera", "QUARTER"))))).verifyComplete();
+                new LayersRequest(List.of(new LayersRequest.Choice("3", "alice", "camera", "QUARTER"))))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void unsubscribe_shouldTreatAMissingListAsEmpty() {
         when(callService.unsubscribe("bob", "call-1", List.of())).thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.unsubscribe(jwt, "call-1", new UnsubscribeRequest(null))).verifyComplete();
+        StepVerifier.create(controller.unsubscribe(jwt, "call-1", new UnsubscribeRequest(null))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -226,9 +227,9 @@ class CallControllerTest {
         when(callService.leave("bob", "call-1")).thenReturn(Mono.empty());
         when(callService.decline("bob", "call-1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.heartbeat(jwt, "call-1")).verifyComplete();
-        StepVerifier.create(controller.leave(jwt, "call-1")).verifyComplete();
-        StepVerifier.create(controller.decline(jwt, "call-1")).verifyComplete();
+        StepVerifier.create(controller.heartbeat(jwt, "call-1")).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(controller.leave(jwt, "call-1")).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(controller.decline(jwt, "call-1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(callService).heartbeat("bob", "call-1");
         verify(callService).leave("bob", "call-1");

@@ -11,6 +11,7 @@ import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +31,7 @@ class CallsClientConfigTest {
     private void call(WebClient client) {
         StepVerifier.create(client.post().uri("/apps/a/sessions/new").retrieve().toBodilessEntity())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test

@@ -21,6 +21,7 @@ import java.time.ZoneId;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -70,7 +71,7 @@ class EventDateFixedConsumerTest {
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\""),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
@@ -83,7 +84,7 @@ class EventDateFixedConsumerTest {
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "1792083600", "1792090800"),
-                record("e2", "1792083600.000000000", "1792090800.000000000")))).verifyComplete();
+                record("e2", "1792083600.000000000", "1792090800.000000000")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
@@ -95,7 +96,7 @@ class EventDateFixedConsumerTest {
         when(chatService.postSystemNotice(anyString(), anyString())).thenReturn(posted());
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(record("""
-                {"eventId":"e1","start":"2026-10-15T17:00:00Z","end":"2026-10-15T19:00:00Z","location":"Lyon"}""")))).verifyComplete();
+                {"eventId":"e1","start":"2026-10-15T17:00:00Z","end":"2026-10-15T19:00:00Z","location":"Lyon"}""")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService, timeout(2000)).postSystemNotice("e1", SAME_DAY);
     }
@@ -107,7 +108,7 @@ class EventDateFixedConsumerTest {
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(record("""
                 {"eventId":"e1","title":"Bowling","start":"2026-10-15T18:00:00Z","end":"2026-10-15T20:00:00Z",
-                 "organizerId":"olivia","previousStart":"2026-10-15T17:00:00Z","previousEnd":"2026-10-15T19:00:00Z"}""")))).verifyComplete();
+                 "organizerId":"olivia","previousStart":"2026-10-15T17:00:00Z","previousEnd":"2026-10-15T19:00:00Z"}""")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService, timeout(2000)).postSystemNotice("e1",
                 "🔁 Sortie décalée : jeudi 15 octobre, 20:00 – 22:00 (au lieu de 19:00 – 21:00)");
@@ -121,7 +122,7 @@ class EventDateFixedConsumerTest {
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("{not json"),
                 record("e1", "\"next thursday\"", "null"),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
         verify(chatService, never()).postSystemNotice(eq("e1"), any());
@@ -139,7 +140,7 @@ class EventDateFixedConsumerTest {
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
                 record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\""),
-                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
+                record("e2", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).expectComplete().verify(Duration.ofSeconds(10));
 
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(chatService, timeout(20_000)).postSystemNotice("e2", SAME_DAY);
@@ -157,7 +158,7 @@ class EventDateFixedConsumerTest {
                         : posted().doOnNext(notice -> posted.countDown())));
 
         StepVerifier.create(consumer.eventDateFixed().apply(Flux.just(
-                record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).verifyComplete();
+                record("e1", "\"2026-10-15T17:00:00Z\"", "\"2026-10-15T19:00:00Z\"")))).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(posted.await(5, TimeUnit.SECONDS)).isTrue();
         // Each attempt calls the service afresh: a retry re-reads the group, which may exist by now.

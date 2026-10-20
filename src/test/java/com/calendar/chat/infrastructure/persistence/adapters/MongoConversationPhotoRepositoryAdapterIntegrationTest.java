@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -71,10 +72,10 @@ class MongoConversationPhotoRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.findPage("c1", null, 2).map(ConversationPhoto::messageId).collectList())
                 .assertNext(page -> assertThat(page).containsExactly("m3", "m2"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findPage("c1", T0.plusSeconds(120), 2).map(ConversationPhoto::messageId).collectList())
                 .assertNext(page -> assertThat(page).containsExactly("m1"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -82,18 +83,18 @@ class MongoConversationPhotoRepositoryAdapterIntegrationTest {
         save("c1", "m1", 1);
         save("c1", "m1", 1);
 
-        StepVerifier.create(adapter.findPage("c1", null, 10).count()).expectNext(1L).verifyComplete();
+        StepVerifier.create(adapter.findPage("c1", null, 10).count()).expectNext(1L).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void find_andDelete_shouldNameTheConversation() {
         save("c1", "m1", 1);
 
-        StepVerifier.create(adapter.find("other", "m1")).verifyComplete();
+        StepVerifier.create(adapter.find("other", "m1")).expectComplete().verify(Duration.ofSeconds(10));
         adapter.delete("other", "m1").block();
-        StepVerifier.create(adapter.find("c1", "m1")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter.find("c1", "m1")).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         adapter.delete("c1", "m1").block();
-        StepVerifier.create(adapter.find("c1", "m1")).verifyComplete();
+        StepVerifier.create(adapter.find("c1", "m1")).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

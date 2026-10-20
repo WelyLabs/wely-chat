@@ -1,5 +1,6 @@
 package com.calendar.chat.infrastructure.media.adapters;
 
+import com.calendar.chat.configuration.MediaApiClientConfig;
 import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.StoredMedia;
 import com.calendar.chat.exception.BusinessErrorCode;
@@ -8,6 +9,7 @@ import com.calendar.chat.exception.TechnicalErrorCode;
 import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.media.mappers.MediaMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -26,6 +28,7 @@ import reactor.test.StepVerifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,7 +94,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", "JPEGDATA".getBytes(), MediaProfile.PHOTO))
                 .expectNext(new StoredMedia("chat/c1/m1.jpg", 1600, 1200))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         MockClientHttpRequest request = sent.getFirst();
         assertThat(request.getMethod()).isEqualTo(HttpMethod.POST);
@@ -128,7 +131,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
                 .expectErrorMatches(error -> expected.equals(codeOf(error)))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -137,7 +140,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
                 .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -149,11 +152,11 @@ class MediaApiAdapterTest {
         MediaApiAdapter offline = new MediaApiAdapter(unreachable, Mappers.getMapper(MediaMapper.class));
 
         StepVerifier.create(offline.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
-                .verifyErrorSatisfies(error -> {
+                .consumeErrorWith(error -> {
                     assertThat(failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE)).isTrue();
                     // Kept as the cause, so the ERROR log shows why wely-media could not be reached.
                     assertThat(error).hasRootCause(refused);
-                });
+                }).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -161,14 +164,14 @@ class MediaApiAdapterTest {
         answer = ClientResponse.create(HttpStatus.INTERNAL_SERVER_ERROR).body("<html>oops</html>").build();
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
-                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isNotNull());
+                .consumeErrorWith(error -> assertThat(error.getCause()).isNotNull()).verify(Duration.ofSeconds(10));
     }
 
     @Test
     void delete_shouldDeleteByKey_withTheSecret() {
         answer = ClientResponse.create(HttpStatus.NO_CONTENT).build();
 
-        StepVerifier.create(adapter.delete("chat/c1/m1.jpg")).verifyComplete();
+        StepVerifier.create(adapter.delete("chat/c1/m1.jpg")).expectComplete().verify(Duration.ofSeconds(10));
 
         MockClientHttpRequest request = sent.getFirst();
         assertThat(request.getMethod()).isEqualTo(HttpMethod.DELETE);
@@ -183,7 +186,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.delete("chat/c1/m1.jpg"))
                 .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -192,7 +195,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.urls(List.of("chat/c1/m1.jpg", "chat/c1/m2.jpg")))
                 .expectNext(Map.of("chat/c1/m1.jpg", "https://media/m1", "chat/c1/m2.jpg", "https://media/m2"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         MockClientHttpRequest request = sent.getFirst();
         assertThat(request.getMethod()).isEqualTo(HttpMethod.POST);
@@ -207,7 +210,7 @@ class MediaApiAdapterTest {
     void urls_shouldAnswerAnEmptyMap_whenTheServiceSendsNoUrls() {
         answer = json(HttpStatus.OK, "{}");
 
-        StepVerifier.create(adapter.urls(List.of("chat/c1/m1.jpg"))).expectNext(Map.of()).verifyComplete();
+        StepVerifier.create(adapter.urls(List.of("chat/c1/m1.jpg"))).expectNext(Map.of()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -216,7 +219,7 @@ class MediaApiAdapterTest {
 
         StepVerifier.create(adapter.urls(List.of("users/u1.jpg")))
                 .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -228,5 +231,23 @@ class MediaApiAdapterTest {
     void exceptionOf_shouldKeepARefusedImageABusinessFailure() {
         assertThat(failsWith(MediaApiAdapter.exceptionOf("MED-BUS-001"), BusinessErrorCode.PHOTO_INVALID)).isTrue();
         assertThat(failsWith(MediaApiAdapter.exceptionOf("MED-BUS-002"), BusinessErrorCode.PHOTO_TOO_LARGE)).isTrue();
+    }
+
+    private static String stackTraceOf(Throwable failure) {
+        java.io.StringWriter trace = new java.io.StringWriter();
+        failure.printStackTrace(new java.io.PrintWriter(trace));
+        return trace.toString();
+    }
+
+    @Test
+    @DisplayName("a real failed call, kept as the cause, never prints the internal secret: it travels in a header")
+    void store_shouldNotLogTheInternalSecret_ofARealFailedCall() {
+        WebClient client = new MediaApiClientConfig().mediaWebClient("http://unreachable.invalid:8085", SECRET);
+        MediaApiAdapter real = new MediaApiAdapter(client, Mappers.getMapper(MediaMapper.class));
+
+        StepVerifier.create(real.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
+                .consumeErrorWith(error -> assertThat(stackTraceOf(error))
+                        .contains("unreachable.invalid").doesNotContain(SECRET))
+                .verify(java.time.Duration.ofSeconds(10));
     }
 }

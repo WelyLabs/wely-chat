@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -54,7 +55,7 @@ class MongoPresenceRepositoryAdapterTest {
         when(connectionRepository.save(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
         when(lastSeenRepository.save(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
-        StepVerifier.create(adapter.connect("c-1", "alice", "pod-1", NOW)).verifyComplete();
+        StepVerifier.create(adapter.connect("c-1", "alice", "pod-1", NOW)).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<PresenceConnectionEntity> saved = ArgumentCaptor.forClass(PresenceConnectionEntity.class);
         verify(connectionRepository).save(saved.capture());
@@ -67,7 +68,7 @@ class MongoPresenceRepositoryAdapterTest {
         when(connectionRepository.deleteById("c-1")).thenReturn(Mono.empty());
         when(lastSeenRepository.save(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
-        StepVerifier.create(adapter.disconnect("c-1", "alice", NOW)).verifyComplete();
+        StepVerifier.create(adapter.disconnect("c-1", "alice", NOW)).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<LastSeenEntity> seen = ArgumentCaptor.forClass(LastSeenEntity.class);
         verify(lastSeenRepository).save(seen.capture());
@@ -79,7 +80,7 @@ class MongoPresenceRepositoryAdapterTest {
         when(connectionRepository.refresh(any(), any())).thenReturn(Mono.just(3L));
         when(lastSeenRepository.saveAll(anyList())).thenAnswer(call -> Flux.fromIterable(call.<List<LastSeenEntity>>getArgument(0)));
 
-        StepVerifier.create(adapter.refresh(Map.of("c-1", "alice", "c-2", "alice", "c-3", "bob"), NOW)).verifyComplete();
+        StepVerifier.create(adapter.refresh(Map.of("c-1", "alice", "c-2", "alice", "c-3", "bob"), NOW)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(connectionRepository).refresh(Set.of("c-1", "c-2", "c-3"), NOW);
         @SuppressWarnings("unchecked")
@@ -95,7 +96,7 @@ class MongoPresenceRepositoryAdapterTest {
 
         StepVerifier.create(adapter.find("alice", NOW))
                 .expectNext(new Presence("alice", true, NOW))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -105,7 +106,7 @@ class MongoPresenceRepositoryAdapterTest {
 
         StepVerifier.create(adapter.find("bob", NOW))
                 .expectNext(new Presence("bob", false, null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -113,7 +114,7 @@ class MongoPresenceRepositoryAdapterTest {
         when(connectionRepository.deleteByUserId("alice")).thenReturn(Mono.just(2L));
         when(lastSeenRepository.deleteById("alice")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+        StepVerifier.create(adapter.forget("alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(connectionRepository, lastSeenRepository);
         order.verify(connectionRepository).deleteByUserId("alice");
@@ -128,7 +129,7 @@ class MongoPresenceRepositoryAdapterTest {
         StepVerifier.create(adapter.forget("alice"))
                 .expectErrorMatches(error -> error instanceof TechnicalException technical
                         && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(lastSeenRepository, never()).deleteById(any(String.class));
     }
 }

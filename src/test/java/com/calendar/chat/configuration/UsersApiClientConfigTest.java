@@ -10,6 +10,7 @@ import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,7 +33,7 @@ class UsersApiClientConfigTest {
 
         StepVerifier.create(client.get().uri("/user-service/internal/deleted-users").retrieve().toBodilessEntity())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().url().toString())
                 .isEqualTo("http://wely-users-service:8082/user-service/internal/deleted-users");
@@ -45,7 +46,7 @@ class UsersApiClientConfigTest {
 
         StepVerifier.create(client.get().uri("http://elsewhere/x").retrieve().toBodilessEntity())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().url().toString()).isEqualTo("http://elsewhere/x");
         assertThat(sent.getFirst().headers().getFirst(UsersApiClientConfig.SECRET_HEADER)).isNull();

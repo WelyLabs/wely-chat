@@ -24,6 +24,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -78,7 +79,7 @@ class PhotoControllerTest {
                 Photo.stored("chat/c1/m1.jpg", 10, 10));
         when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq("Podium"))).thenReturn(Mono.just(sent));
 
-        StepVerifier.create(controller.send(jwt, "c1", form(file(3), "Podium"))).expectNext(sent).verifyComplete();
+        StepVerifier.create(controller.send(jwt, "c1", form(file(3), "Podium"))).expectNext(sent).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -88,7 +89,7 @@ class PhotoControllerTest {
 
         StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -98,21 +99,21 @@ class PhotoControllerTest {
 
         StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_READ_ONLY))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void send_shouldSendWithoutCaption_whenThereIsNone() {
         when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq(""))).thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.send(jwt, "c1", form(file(3), null))).verifyComplete();
+        StepVerifier.create(controller.send(jwt, "c1", form(file(3), null))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void send_shouldRefuseAPhotoOverTenMegabytes_withoutCallingTheService() {
         StepVerifier.create(controller.send(jwt, "c1", form(file(PhotoController.MAX_PHOTO_BYTES + 1), null)))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_TOO_LARGE))
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(photoService, never()).send(any(), any(), any(), any(), any());
     }
 
@@ -120,14 +121,14 @@ class PhotoControllerTest {
     void send_shouldRefuseAFormWithoutAFile() {
         StepVerifier.create(controller.send(jwt, "c1", form(null, "just text")))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void send_shouldRefuseAnOverlongCaption() {
         StepVerifier.create(controller.send(jwt, "c1", form(mock(FilePart.class), "x".repeat(PhotoController.MAX_CAPTION_LENGTH + 1))))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_INVALID))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -136,14 +137,14 @@ class PhotoControllerTest {
         Instant before = Instant.parse("2026-10-13T20:00:00Z");
         when(photoService.page("c1", "alice", before, 30)).thenReturn(Flux.just(photo));
 
-        StepVerifier.create(controller.page(jwt, "c1", before, 30)).expectNext(photo).verifyComplete();
+        StepVerifier.create(controller.page(jwt, "c1", before, 30)).expectNext(photo).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void remove_shouldRemoveAsTheCaller() {
         when(photoService.remove("c1", "m1", "alice")).thenReturn(Mono.empty());
 
-        StepVerifier.create(controller.remove(jwt, "c1", "m1")).verifyComplete();
+        StepVerifier.create(controller.remove(jwt, "c1", "m1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(photoService).remove("c1", "m1", "alice");
     }

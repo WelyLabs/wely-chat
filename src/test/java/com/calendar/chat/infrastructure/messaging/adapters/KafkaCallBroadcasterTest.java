@@ -15,6 +15,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -43,7 +44,7 @@ class KafkaCallBroadcasterTest {
     void broadcast_shouldSendTheEventToTheCallBinding() {
         when(streamBridge.send(eq(KafkaCallBroadcaster.DESTINATION), any(Object.class))).thenReturn(true);
 
-        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(streamBridge).send(KafkaCallBroadcaster.DESTINATION, mapper.toBroadcastDTO(ringing("bob")));
     }
@@ -52,7 +53,7 @@ class KafkaCallBroadcasterTest {
     void broadcast_shouldCarryTheCallerName_forRingingScreens() {
         when(streamBridge.send(eq(KafkaCallBroadcaster.DESTINATION), any(Object.class))).thenReturn(true);
 
-        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<Object> sent = ArgumentCaptor.forClass(Object.class);
         verify(streamBridge).send(eq(KafkaCallBroadcaster.DESTINATION), sent.capture());
@@ -63,7 +64,7 @@ class KafkaCallBroadcasterTest {
     void broadcast_shouldNotFail_whenTheBinderRefuses() {
         when(streamBridge.send(eq(KafkaCallBroadcaster.DESTINATION), any(Object.class))).thenReturn(false);
 
-        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(ringing("bob"))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -74,6 +75,6 @@ class KafkaCallBroadcasterTest {
                     broadcaster.accept(mapper.toBroadcastDTO(ringing("bob")));
                 })
                 .expectNext(ringing("bob"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

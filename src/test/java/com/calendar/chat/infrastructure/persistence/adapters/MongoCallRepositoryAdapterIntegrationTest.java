@@ -24,6 +24,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -90,7 +91,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
         Call second = start("conv-1");
 
         assertThat(second.id()).isNotEqualTo(first.id());
-        StepVerifier.create(adapter.findLive("conv-1").map(Call::id)).expectNext(second.id()).verifyComplete();
+        StepVerifier.create(adapter.findLive("conv-1").map(Call::id)).expectNext(second.id()).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -98,8 +99,8 @@ class MongoCallRepositoryAdapterIntegrationTest {
     void findById_shouldNotFindSomeoneElsesCall() {
         Call call = start("conv-1");
 
-        StepVerifier.create(adapter.findById(call.id(), "bob").map(Call::id)).expectNext(call.id()).verifyComplete();
-        StepVerifier.create(adapter.findById(call.id(), "mallory")).verifyComplete();
+        StepVerifier.create(adapter.findById(call.id(), "bob").map(Call::id)).expectNext(call.id()).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findById(call.id(), "mallory")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -145,7 +146,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
             assertThat(bob.trackNames()).containsExactly("audio", "camera");
             assertThat(bob.lastSeenAt()).isEqualTo(T0.plusSeconds(15));
         });
-        StepVerifier.create(adapter.touch(call.id(), "alice", T0)).verifyComplete();
+        StepVerifier.create(adapter.touch(call.id(), "alice", T0)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -158,9 +159,9 @@ class MongoCallRepositoryAdapterIntegrationTest {
                     assertThat(ended.status()).isEqualTo(CallStatus.MISSED);
                     assertThat(ended.endedAt()).isEqualTo(T0.plusSeconds(30));
                 })
-                .verifyComplete();
-        StepVerifier.create(adapter.end(call.id(), CallStatus.ENDED, T0)).verifyComplete();
-        StepVerifier.create(adapter.addParticipant(call.id(), participant("bob", T0), 12)).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.end(call.id(), CallStatus.ENDED, T0)).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.addParticipant(call.id(), participant("bob", T0), 12)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -175,12 +176,12 @@ class MongoCallRepositoryAdapterIntegrationTest {
 
         StepVerifier.create(adapter.findRingingStartedBefore(T0.plusSeconds(1)).map(Call::id).collectList())
                 .assertNext(ids -> assertThat(ids).containsExactly(ringing.id()))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findLiveWithParticipantSeenBefore(T0.plusSeconds(1)).map(Call::id))
-                .expectNext(active.id()).verifyComplete();
+                .expectNext(active.id()).expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(adapter.findLiveStartedBefore(T0.plusSeconds(1)).map(Call::id).collectList())
                 .assertNext(ids -> assertThat(ids).containsExactlyInAnyOrder(ringing.id(), active.id()))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -206,7 +207,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
         StepVerifier.create(adapter.findLiveInvolving("alice").map(Call::id).collectList())
                 .assertNext(ids -> assertThat(ids)
                         .containsExactlyInAnyOrder(startedByAlice.id(), joinedByAlice.id(), ringingAlice.id()))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -219,14 +220,14 @@ class MongoCallRepositoryAdapterIntegrationTest {
         Call live = start("conv-2");
         adapter.addParticipant(live.id(), participant("alice", T0), 12).block();
 
-        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         Call endedAfter = adapter.findById(ended.id(), "alice").block();
         assertThat(endedAfter.participantIds()).containsExactly("bob");
         assertThat(endedAfter.memberIds()).contains("alice");
         assertThat(endedAfter.startedBy()).isEqualTo("alice");
         assertThat(adapter.findById(live.id(), "alice").block().participantIds()).containsExactly("alice");
-        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -237,7 +238,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
                 List.of("alice", "bob"))).block();
         assertThat(adapter.findById(byAlice.id(), "alice").block().startedByName()).isEqualTo("Alice");
 
-        StepVerifier.create(adapter.removeFromEndedCalls("alice")).verifyComplete();
+        StepVerifier.create(adapter.removeFromEndedCalls("alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(adapter.findById(byAlice.id(), "bob").block().startedByName()).isNull();
         assertThat(adapter.findById(byBob.id(), "bob").block().startedByName()).isEqualTo("Bob");
@@ -257,6 +258,6 @@ class MongoCallRepositoryAdapterIntegrationTest {
                     assertThat(call.startedBy()).isEqualTo("alice");
                     assertThat(call.startedByName()).isNull();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

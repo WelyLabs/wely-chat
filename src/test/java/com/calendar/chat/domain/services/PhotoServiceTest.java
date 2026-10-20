@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -122,7 +123,7 @@ class PhotoServiceTest {
                     assertThat(sent.photo().width()).isEqualTo(1600);
                     assertThat(sent.photo().url()).isEqualTo("https://media/chat/c1/" + sent.id() + ".jpg");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<ConversationPhoto> listed = ArgumentCaptor.forClass(ConversationPhoto.class);
         verify(photoRepository).save(listed.capture());
@@ -138,7 +139,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "mallory", "Mallory", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(mediaStore, never()).store(any(), any(), any());
     }
 
@@ -149,7 +150,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(chatRepository, never()).findById(any(), any());
         verify(mediaStore, never()).store(any(), any(), any());
     }
@@ -162,7 +163,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_READ_ONLY)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(mediaStore, never()).store(any(), any(), any());
         verify(chatService, never()).sendMessage(any());
     }
@@ -179,7 +180,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.FRIENDSHIP_REQUIRED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(mediaStore, never()).store(any(), any(), any());
         verify(chatService, never()).sendMessage(any());
     }
@@ -200,7 +201,7 @@ class PhotoServiceTest {
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectError(IllegalStateException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(mediaStore).delete(startsWith("chat/c1/"));
         verify(photoRepository, never()).save(any());
     }
@@ -212,7 +213,7 @@ class PhotoServiceTest {
         when(chatService.sendMessage(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
         when(photoRepository.save(any())).thenReturn(Mono.error(new IllegalStateException("index down")));
 
-        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, "")).expectNextCount(1).verifyComplete();
+        StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, "")).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -223,7 +224,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.PHOTO_INVALID)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(chatService, never()).sendMessage(any());
     }
 
@@ -235,7 +236,7 @@ class PhotoServiceTest {
 
         StepVerifier.create(service.page("c1", "bob", null, 30))
                 .assertNext(photo -> assertThat(photo.photo().url()).isEqualTo("https://media/chat/c1/m1.jpg"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -243,7 +244,7 @@ class PhotoServiceTest {
         member(eventGroup, "bob");
         when(photoRepository.findPage(eq("c1"), any(), eq(PhotoService.MAX_PAGE))).thenReturn(Flux.empty());
 
-        StepVerifier.create(service.page("c1", "bob", null, 5000)).verifyComplete();
+        StepVerifier.create(service.page("c1", "bob", null, 5000)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -253,7 +254,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.page("c1", "mallory", null, 30))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(photoRepository, never()).findPage(any(), any(), any(Integer.class));
     }
 
@@ -263,7 +264,7 @@ class PhotoServiceTest {
         member(readOnlyDirect(), "alice");
         when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("bob")));
 
-        StepVerifier.create(service.page("c1", "alice", null, 30)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(service.page("c1", "alice", null, 30)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -273,7 +274,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.remove("c1", "m1", "alice"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
         verify(mediaStore, never()).delete(any());
     }
@@ -284,7 +285,7 @@ class PhotoServiceTest {
         removable("alice");
         when(chatService.broadcastUpdate(any(), eq("alice"))).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatRepository).markPhotoRemoved("c1", "m1");
     }
@@ -297,7 +298,7 @@ class PhotoServiceTest {
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
         when(mediaStore.delete("chat/c1/m1.jpg")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatRepository).markPhotoRemoved("c1", "m1");
         verify(photoRepository).delete("c1", "m1");
@@ -312,7 +313,7 @@ class PhotoServiceTest {
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
         when(mediaStore.delete(anyString())).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.remove("c1", "m1", "olivia")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "olivia")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -323,7 +324,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.remove("c1", "m1", "bob"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.PHOTO_REMOVAL_DENIED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
         verify(mediaStore, never()).delete(any());
         verify(chatService, never()).broadcastUpdate(any(), any());
@@ -337,7 +338,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.remove("c1", "m1", "bob"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.PHOTO_REMOVAL_DENIED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -348,7 +349,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.remove("c1", "gone", "alice"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.PHOTO_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -360,7 +361,7 @@ class PhotoServiceTest {
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
         when(mediaStore.delete(anyString())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     private void removable(String senderId) {
@@ -380,7 +381,7 @@ class PhotoServiceTest {
         removable("alice");
         when(chatService.broadcastUpdate(any(), eq("olivia"))).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.remove("c1", "m1", "olivia")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "olivia")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService).broadcastUpdate(argThat(message -> message.id().equals("m1")
                 && message.conversationId().equals("c1")
@@ -397,7 +398,7 @@ class PhotoServiceTest {
         removable("alice");
         when(chatService.broadcastUpdate(any(), any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(chatRepository, mediaStore, chatService);
         order.verify(chatRepository).markPhotoRemoved("c1", "m1");
@@ -413,7 +414,7 @@ class PhotoServiceTest {
         removable("alice");
         when(chatService.broadcastUpdate(any(), any())).thenReturn(Mono.error(new IllegalStateException("broker down")));
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -422,7 +423,7 @@ class PhotoServiceTest {
         removable("alice");
         when(chatRepository.findMessage("c1", "m1")).thenReturn(Mono.error(new IllegalStateException("mongo down")));
 
-        StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
+        StepVerifier.create(service.remove("c1", "m1", "alice")).expectComplete().verify(Duration.ofSeconds(10));
         verify(chatService, never()).broadcastUpdate(any(), any());
     }
 
@@ -435,7 +436,7 @@ class PhotoServiceTest {
                     assertThat(live.kind()).isEqualTo(BroadcastKind.NEW);
                     assertThat(live.message().photo().url()).isEqualTo("https://media/chat/c1/m1.jpg");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -451,7 +452,7 @@ class PhotoServiceTest {
                     assertThat(sent.photo().key()).startsWith("chat/c1/");
                     assertThat(sent.photo().url()).isNull();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -460,7 +461,7 @@ class PhotoServiceTest {
         ConversationPhoto other = new ConversationPhoto("c1", "m2", "bob", Photo.stored("chat/c1/m2.jpg", 10, 10), NOW);
         when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("alice"), other));
 
-        StepVerifier.create(service.page("c1", "bob", null, 30)).expectNextCount(2).verifyComplete();
+        StepVerifier.create(service.page("c1", "bob", null, 30)).expectNextCount(2).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(mediaStore, times(1)).urls(List.of("chat/c1/m1.jpg", "chat/c1/m2.jpg"));
     }
@@ -476,7 +477,7 @@ class PhotoServiceTest {
                     assertThat(photo.photo().key()).isEqualTo("chat/c1/m1.jpg");
                     assertThat(photo.photo().url()).isNull();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -485,11 +486,11 @@ class PhotoServiceTest {
         Message removed = new Message("m2", "alice", "Alice", null, "c1", "", NOW, Photo.REMOVED);
         Message stored = new Message("m1", "alice", "Alice", null, "c1", "", NOW, Photo.stored("chat/c1/m1.jpg", 10, 10));
 
-        StepVerifier.create(service.signed(text)).expectNext(text).verifyComplete();
-        StepVerifier.create(service.signed(removed)).expectNext(removed).verifyComplete();
+        StepVerifier.create(service.signed(text)).expectNext(text).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(service.signed(removed)).expectNext(removed).expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(service.signed(stored))
                 .assertNext(signed -> assertThat(signed.photo().url()).isEqualTo("https://media/chat/c1/m1.jpg"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         // Nothing to sign, nothing asked of wely-media.
         verify(mediaStore, times(1)).urls(any());
     }
@@ -504,7 +505,7 @@ class PhotoServiceTest {
                     assertThat(signed.photo().key()).isEqualTo("chat/c1/m1.jpg");
                     assertThat(signed.photo().url()).isNull();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -519,7 +520,7 @@ class PhotoServiceTest {
                     assertThat(bucket.messages()).extracting(message -> message.photo() == null ? null : message.photo().url())
                             .containsExactly("https://media/chat/c1/m1.jpg", "https://media/chat/c1/m2.jpg", null);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(mediaStore, times(1)).urls(List.of("chat/c1/m1.jpg", "chat/c1/m2.jpg"));
     }
 
@@ -527,7 +528,7 @@ class PhotoServiceTest {
     void signed_shouldLeaveABucketWithoutMessagesAlone() {
         MessageBucket empty = new MessageBucket("c1", 0, null);
 
-        StepVerifier.create(service.signed(empty)).expectNext(empty).verifyComplete();
+        StepVerifier.create(service.signed(empty)).expectNext(empty).expectComplete().verify(Duration.ofSeconds(10));
         verify(mediaStore, never()).urls(any());
     }
 
@@ -540,7 +541,7 @@ class PhotoServiceTest {
         StepVerifier.create(service.signed(conversation))
                 .assertNext(signed -> assertThat(signed.getMessages().getFirst().photo().url())
                         .isEqualTo("https://media/chat/c1/m1.jpg"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -555,7 +556,7 @@ class PhotoServiceTest {
 
         StepVerifier.create(service.signed(conversation))
                 .assertNext(signed -> assertThat(signed.getMessages()).allMatch(message -> message.photo().url() != null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<Collection<String>> calls = ArgumentCaptor.captor();
         verify(mediaStore, times(3)).urls(calls.capture());
@@ -578,7 +579,7 @@ class PhotoServiceTest {
                     assertThat(bucket.messages().subList(0, 200)).allMatch(message -> message.photo().url() != null);
                     assertThat(bucket.messages().subList(200, 250)).allMatch(message -> message.photo().url() == null);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- purgeConversation ------------------------------------------------
@@ -590,7 +591,7 @@ class PhotoServiceTest {
         when(mediaStore.delete(org.mockito.ArgumentMatchers.anyString())).thenReturn(Mono.empty());
         when(photoRepository.deleteAll("c1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.purgeConversation("c1")).verifyComplete();
+        StepVerifier.create(service.purgeConversation("c1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(mediaStore).delete("chat/c1/m1.jpg");
         verify(mediaStore).delete("chat/c1/m2.jpg");
@@ -603,7 +604,7 @@ class PhotoServiceTest {
         when(mediaStore.delete("chat/c1/m1.jpg")).thenReturn(Mono.error(new IllegalStateException("media down")));
         when(photoRepository.deleteAll("c1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.purgeConversation("c1")).verifyComplete();
+        StepVerifier.create(service.purgeConversation("c1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(photoRepository).deleteAll("c1");
     }

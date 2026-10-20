@@ -20,6 +20,7 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,11 +60,11 @@ class MongoDeletedUserMarkersAdapterIntegrationTest {
         adapter.markDeleted("alice", FIRST).block();
         adapter.markErased("alice", ERASED).block();
 
-        StepVerifier.create(adapter.markDeleted("alice", REPLAYED)).verifyComplete();
+        StepVerifier.create(adapter.markDeleted("alice", REPLAYED)).expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(adapter.find("alice"))
                 .expectNext(new DeletedUserMarker("alice", FIRST, ERASED))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         assertThat(mongoTemplate.count(new Query(), DeletedUserMarkerEntity.class).block()).isEqualTo(1L);
     }
 
@@ -74,9 +75,9 @@ class MongoDeletedUserMarkersAdapterIntegrationTest {
 
         StepVerifier.create(adapter.findDeletedAmong(List.of("alice", "bob", "carol")).collectList())
                 .assertNext(ids -> assertThat(ids).containsExactlyInAnyOrder("alice", "carol"))
-                .verifyComplete();
-        StepVerifier.create(adapter.isDeleted("bob")).expectNext(false).verifyComplete();
-        StepVerifier.create(adapter.isDeleted("alice")).expectNext(true).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.isDeleted("bob")).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.isDeleted("alice")).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -86,8 +87,8 @@ class MongoDeletedUserMarkersAdapterIntegrationTest {
 
         StepVerifier.create(adapter.find("alice"))
                 .expectNext(new DeletedUserMarker("alice", FIRST, null))
-                .verifyComplete();
-        StepVerifier.create(adapter.find("bob")).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.find("bob")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -101,7 +102,7 @@ class MongoDeletedUserMarkersAdapterIntegrationTest {
 
         StepVerifier.create(adapter.erasedAmong(List.of("alice", "bob", "carol")))
                 .expectNext(Set.of("alice"))
-                .verifyComplete();
-        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

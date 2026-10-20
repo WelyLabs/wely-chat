@@ -25,6 +25,7 @@ import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -78,7 +79,7 @@ class PresenceServiceTest {
 
         StepVerifier.create(service.track("alice", Flux.just("a", "b")))
                 .expectNext("a", "b")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<String> connectionId = ArgumentCaptor.forClass(String.class);
         verify(presenceRepository).connect(connectionId.capture(), eq("alice"), eq("pod-1"), eq(NOW));
@@ -95,7 +96,7 @@ class PresenceServiceTest {
         StepVerifier.create(service.track("alice", stream.flux()))
                 .then(() -> assertThat(service.localConnectionCount()).isEqualTo(1))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(presenceRepository).disconnect(anyString(), eq("alice"), eq(NOW));
         assertThat(service.localConnectionCount()).isZero();
@@ -106,7 +107,7 @@ class PresenceServiceTest {
         connectionsSucceed();
 
         StepVerifier.create(service.track("alice", Flux.error(new IllegalStateException("broker down"))))
-                .verifyError(IllegalStateException.class);
+                .expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
 
         verify(presenceRepository).disconnect(anyString(), eq("alice"), eq(NOW));
     }
@@ -120,7 +121,7 @@ class PresenceServiceTest {
 
         StepVerifier.create(service.track("alice", Flux.just("hello")))
                 .expectNext("hello")
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -129,14 +130,14 @@ class PresenceServiceTest {
         service.track("alice", Flux.just("a"));
 
         assertThat(service.localConnectionCount()).isZero();
-        StepVerifier.create(service.heartbeat()).verifyComplete();
+        StepVerifier.create(service.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
         verify(presenceRepository, never()).connect(anyString(), anyString(), anyString(), any());
         verify(presenceRepository, never()).refresh(any(), any());
     }
 
     @Test
     void heartbeat_shouldDoNothing_withoutOpenConnections() {
-        StepVerifier.create(service.heartbeat()).verifyComplete();
+        StepVerifier.create(service.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(presenceRepository, never()).refresh(any(), any());
     }
@@ -150,7 +151,7 @@ class PresenceServiceTest {
         service.track("alice", alice.flux()).subscribe();
         service.track("bob", bob.flux()).subscribe();
 
-        StepVerifier.create(service.heartbeat()).verifyComplete();
+        StepVerifier.create(service.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> refreshed = ArgumentCaptor.forClass(Map.class);
@@ -167,7 +168,7 @@ class PresenceServiceTest {
         service.track("bob", TestPublisher.<String>create().flux()).subscribe();
         deleted("bob");
 
-        StepVerifier.create(service.heartbeat()).verifyComplete();
+        StepVerifier.create(service.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> refreshed = ArgumentCaptor.forClass(Map.class);
@@ -181,7 +182,7 @@ class PresenceServiceTest {
         service.track("bob", TestPublisher.<String>create().flux()).subscribe();
         deleted("bob");
 
-        StepVerifier.create(service.heartbeat()).verifyComplete();
+        StepVerifier.create(service.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(presenceRepository, never()).refresh(any(), any());
     }
@@ -196,7 +197,7 @@ class PresenceServiceTest {
         StepVerifier.create(service.track("bob", stream.flux()))
                 .then(() -> deleted("bob"))
                 .then(stream::complete)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(presenceRepository).forget("bob");
         verify(presenceRepository, never()).disconnect(anyString(), anyString(), any());
@@ -211,7 +212,7 @@ class PresenceServiceTest {
 
         StepVerifier.create(service.getPresence("alice", "bob"))
                 .expectNext(new Presence("bob", false, null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(presenceRepository, never()).find(any(), any());
     }
 
@@ -224,7 +225,7 @@ class PresenceServiceTest {
 
         StepVerifier.create(service.getPresence("alice", "bob"))
                 .expectNext(presence)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -234,7 +235,7 @@ class PresenceServiceTest {
         StepVerifier.create(service.getPresence("alice", "carol"))
                 .expectErrorMatches(error -> error instanceof BusinessException e
                         && e.getErrorCode() == BusinessErrorCode.PRESENCE_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         verify(presenceRepository, never()).find(any(), any());
     }
 

@@ -105,6 +105,20 @@ public enum BusinessErrorCode {
             "CHT-BUS-013",
             "Friends only",
             "A private conversation is only open between friends.",
+            HttpStatus.FORBIDDEN),
+
+    /** No token, or one the resource server refused: expired, badly signed, wrong issuer. */
+    AUTHENTICATION_REQUIRED(
+            "CHT-REQ-001",
+            "Authentication required",
+            "A valid bearer token is required.",
+            HttpStatus.UNAUTHORIZED),
+
+    /** An authenticated caller the security chain refuses. */
+    ACCESS_DENIED(
+            "CHT-REQ-002",
+            "Access denied",
+            "This token does not grant access to the resource.",
             HttpStatus.FORBIDDEN);
 
     private final String code;

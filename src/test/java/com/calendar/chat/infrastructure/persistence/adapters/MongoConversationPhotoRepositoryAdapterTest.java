@@ -18,6 +18,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -45,21 +46,21 @@ class MongoConversationPhotoRepositoryAdapterTest {
     void save_shouldStoreTheEntry() {
         when(repository.save(any())).thenReturn(Mono.just(entity));
 
-        StepVerifier.create(adapter.save(photo)).verifyComplete();
+        StepVerifier.create(adapter.save(photo)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void save_shouldKeepOneEntry_whenTheSamePhotoIsSavedTwice() {
         when(repository.save(any())).thenReturn(Mono.error(new DuplicateKeyException("conversation_message_unique")));
 
-        StepVerifier.create(adapter.save(photo)).verifyComplete();
+        StepVerifier.create(adapter.save(photo)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void findPage_shouldStartFromTheNewest_withoutACursor() {
         when(repository.findByConversationIdOrderBySentAtDesc("c1", Limit.of(30))).thenReturn(Flux.just(entity));
 
-        StepVerifier.create(adapter.findPage("c1", null, 30)).expectNext(photo).verifyComplete();
+        StepVerifier.create(adapter.findPage("c1", null, 30)).expectNext(photo).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -67,21 +68,21 @@ class MongoConversationPhotoRepositoryAdapterTest {
         when(repository.findByConversationIdAndSentAtBeforeOrderBySentAtDesc("c1", SENT, Limit.of(30)))
                 .thenReturn(Flux.empty());
 
-        StepVerifier.create(adapter.findPage("c1", SENT, 30)).verifyComplete();
+        StepVerifier.create(adapter.findPage("c1", SENT, 30)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void find_shouldNameTheConversation() {
         when(repository.findByConversationIdAndMessageId("c1", "m1")).thenReturn(Mono.just(entity));
 
-        StepVerifier.create(adapter.find("c1", "m1")).expectNext(photo).verifyComplete();
+        StepVerifier.create(adapter.find("c1", "m1")).expectNext(photo).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void delete_shouldNameTheConversation() {
         when(repository.deleteByConversationIdAndMessageId("c1", "m1")).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(adapter.delete("c1", "m1")).verifyComplete();
+        StepVerifier.create(adapter.delete("c1", "m1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(repository).deleteByConversationIdAndMessageId("c1", "m1");
     }
@@ -90,14 +91,14 @@ class MongoConversationPhotoRepositoryAdapterTest {
     void findAll_shouldReadEveryPhotoOfTheConversation() {
         when(repository.findByConversationId("c1")).thenReturn(Flux.just(entity));
 
-        StepVerifier.create(adapter.findAll("c1")).expectNext(photo).verifyComplete();
+        StepVerifier.create(adapter.findAll("c1")).expectNext(photo).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void deleteAll_shouldDeleteTheConversationsEntries() {
         when(repository.deleteByConversationId("c1")).thenReturn(Mono.just(2L));
 
-        StepVerifier.create(adapter.deleteAll("c1")).verifyComplete();
+        StepVerifier.create(adapter.deleteAll("c1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(repository).deleteByConversationId("c1");
     }

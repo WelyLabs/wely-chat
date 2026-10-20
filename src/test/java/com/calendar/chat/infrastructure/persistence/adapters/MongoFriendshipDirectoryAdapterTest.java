@@ -19,6 +19,8 @@ import org.springframework.dao.DuplicateKeyException;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -56,7 +58,7 @@ class MongoFriendshipDirectoryAdapterTest {
     void saveIfNewer_shouldInsertANewPairAsFriends() {
         when(repository.insert(any(FriendshipEntity.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(BOB, ALICE, 3))).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(BOB, ALICE, 3))).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<FriendshipEntity> inserted = ArgumentCaptor.forClass(FriendshipEntity.class);
         verify(repository).insert(inserted.capture());
@@ -71,7 +73,7 @@ class MongoFriendshipDirectoryAdapterTest {
         when(repository.insert(any(FriendshipEntity.class))).thenReturn(Mono.error(new DuplicateKeyException("dup")));
         when(repository.befriendIfOlder(PAIR, 3)).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3))).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3))).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -79,7 +81,7 @@ class MongoFriendshipDirectoryAdapterTest {
         when(repository.insert(any(FriendshipEntity.class))).thenReturn(Mono.error(new DuplicateKeyException("dup")));
         when(repository.befriendIfOlder(PAIR, 3)).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3))).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3))).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -88,7 +90,7 @@ class MongoFriendshipDirectoryAdapterTest {
 
         StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3)))
                 .expectErrorMatches(MongoFriendshipDirectoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -98,21 +100,21 @@ class MongoFriendshipDirectoryAdapterTest {
 
         StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 3)))
                 .expectErrorMatches(MongoFriendshipDirectoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void end_shouldEndThePair_whicheverSideIsNamedFirst() {
         when(repository.endIfFriends(PAIR)).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(adapter.end(BOB, ALICE)).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.end(BOB, ALICE)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void end_shouldAnswerFalse_whenThePairWasNotFriends() {
         when(repository.endIfFriends(PAIR)).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -121,14 +123,14 @@ class MongoFriendshipDirectoryAdapterTest {
 
         StepVerifier.create(adapter.end(ALICE, BOB))
                 .expectErrorMatches(MongoFriendshipDirectoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void areFriends_shouldAskForThePair_whicheverSideIsNamedFirst() {
         when(repository.existsFriends(PAIR)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(adapter.areFriends(BOB, ALICE)).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.areFriends(BOB, ALICE)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -137,14 +139,14 @@ class MongoFriendshipDirectoryAdapterTest {
 
         StepVerifier.create(adapter.areFriends(ALICE, BOB))
                 .expectErrorMatches(MongoFriendshipDirectoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void forget_shouldDeleteEveryPairOfTheAccount() {
         when(repository.deleteInvolving(ALICE)).thenReturn(Mono.just(2L));
 
-        StepVerifier.create(adapter.forget(ALICE)).verifyComplete();
+        StepVerifier.create(adapter.forget(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -153,6 +155,6 @@ class MongoFriendshipDirectoryAdapterTest {
 
         StepVerifier.create(adapter.forget(ALICE))
                 .expectErrorMatches(MongoFriendshipDirectoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

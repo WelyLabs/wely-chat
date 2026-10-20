@@ -19,6 +19,7 @@ import io.swagger.v3.oas.models.Paths;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +45,9 @@ class OpenApiConfigTest {
     private int port;
 
     private WebTestClient client() {
-        return WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
+        return WebTestClient.bindToServer().baseUrl("http://localhost:" + port)
+                .responseTimeout(Duration.ofSeconds(30))
+                .build();
     }
 
     @Test
@@ -109,7 +112,7 @@ class OpenApiConfigTest {
                         assertThat((List<Object>) codes).contains(
                                 BusinessErrorCode.CONVERSATION_NOT_FOUND.getCode(),
                                 TechnicalErrorCode.STORE_UNAVAILABLE.getCode(),
-                                GlobalErrorHandler.UNEXPECTED_FAILURE));
+                                GlobalErrorHandler.UNEXPECTED_FAILURE_CODE));
     }
 
     @Test

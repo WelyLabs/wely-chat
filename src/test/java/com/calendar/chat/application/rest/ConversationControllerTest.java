@@ -23,6 +23,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -63,7 +64,7 @@ class ConversationControllerTest {
 
         StepVerifier.create(controller.getConversation(jwt, "friend-1"))
                 .assertNext(response -> assertThat(response.getBody()).isSameAs(detail))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService).readOrCreateConversation(CALLER_ID, "friend-1");
     }
@@ -78,7 +79,7 @@ class ConversationControllerTest {
         StepVerifier.create(controller.getConversation(jwt, "friend-1"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -90,7 +91,7 @@ class ConversationControllerTest {
         StepVerifier.create(controller.getConversation(jwt, "gone"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- readPreviousMessages ---------------------------------------------
@@ -107,7 +108,7 @@ class ConversationControllerTest {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
                     assertThat(response.getBody()).isSameAs(bucket);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -120,7 +121,7 @@ class ConversationControllerTest {
                 .expectErrorMatches(error -> error instanceof BusinessException
                         && ((BusinessException) error).getErrorCode()
                                 == BusinessErrorCode.MESSAGE_PAGE_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -149,7 +150,7 @@ class ConversationControllerTest {
                     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
                     assertThat(response.getBody()).isSameAs(detail);
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -164,7 +165,7 @@ class ConversationControllerTest {
                 .expectErrorMatches(error -> error instanceof BusinessException
                         && ((BusinessException) error).getErrorCode()
                                 == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- getEventConversation ---------------------------------------------
@@ -177,7 +178,7 @@ class ConversationControllerTest {
 
         StepVerifier.create(controller.getEventConversation(jwt, "event-1"))
                 .assertNext(response -> assertThat(response.getBody()).isSameAs(detail))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -189,7 +190,7 @@ class ConversationControllerTest {
         StepVerifier.create(controller.getEventConversation(jwt, "event-1"))
                 .expectErrorMatches(error -> error instanceof BusinessException
                         && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     // --- getConversations -------------------------------------------------
@@ -207,7 +208,7 @@ class ConversationControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         StepVerifier.create(response.getBody())
                 .expectNext(summary)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(chatService).readConversations(CALLER_ID);
     }
 
@@ -221,6 +222,6 @@ class ConversationControllerTest {
 
         StepVerifier.create(controller.getConversations(jwt).getBody())
                 .assertNext(summary -> assertThat(summary.readOnly()).isTrue())
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

@@ -17,6 +17,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -53,7 +55,7 @@ class FriendshipServiceTest {
         when(markers.findDeletedAmong(any())).thenReturn(Flux.empty());
         when(directory.saveIfNewer(friendship)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.applyState(friendship)).expectNext(true).verifyComplete();
+        StepVerifier.create(service.applyState(friendship)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -61,7 +63,7 @@ class FriendshipServiceTest {
     void applyState_shouldStoreNothing_whenOneOfThemIsDeleted() {
         when(markers.findDeletedAmong(any())).thenReturn(Flux.just(BOB));
 
-        StepVerifier.create(service.applyState(new Friendship(ALICE, BOB, 4))).expectNext(false).verifyComplete();
+        StepVerifier.create(service.applyState(new Friendship(ALICE, BOB, 4))).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(directory, never()).saveIfNewer(any());
     }
@@ -70,14 +72,14 @@ class FriendshipServiceTest {
     void applyTombstone_shouldEndThePair() {
         when(directory.end(ALICE, BOB)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.applyTombstone(ALICE, BOB)).expectNext(true).verifyComplete();
+        StepVerifier.create(service.applyTombstone(ALICE, BOB)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void requireFriends_shouldComplete_whenTheyAreFriends() {
         when(directory.areFriends(ALICE, BOB)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(service.requireFriends(ALICE, BOB)).verifyComplete();
+        StepVerifier.create(service.requireFriends(ALICE, BOB)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -86,14 +88,14 @@ class FriendshipServiceTest {
 
         StepVerifier.create(service.requireFriends(ALICE, BOB))
                 .expectErrorMatches(FriendshipServiceTest::friendshipRequired)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void requireFriends_shouldFailWithoutAsking_forOneself() {
         StepVerifier.create(service.requireFriends(ALICE, ALICE))
                 .expectErrorMatches(FriendshipServiceTest::friendshipRequired)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(directory);
     }
@@ -103,7 +105,7 @@ class FriendshipServiceTest {
     void requireFriends_shouldFailWithoutAsking_whenTheOtherIsMissing() {
         StepVerifier.create(service.requireFriends(ALICE, null))
                 .expectErrorMatches(FriendshipServiceTest::friendshipRequired)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(directory, never()).areFriends(anyString(), anyString());
     }
@@ -115,14 +117,14 @@ class FriendshipServiceTest {
         StepVerifier.create(service.requireFriends(ALICE, BOB))
                 .expectErrorMatches(error -> error instanceof TechnicalException technical
                         && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void forget_shouldRemoveTheAccountsPairs() {
         when(directory.forget(ALICE)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.forget(ALICE)).verifyComplete();
+        StepVerifier.create(service.forget(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(directory).forget(ALICE);
     }

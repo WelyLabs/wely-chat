@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 class LocalMessageBroadcasterTest {
 
@@ -38,7 +39,7 @@ class LocalMessageBroadcasterTest {
                     }
                 })
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -60,7 +61,7 @@ class LocalMessageBroadcasterTest {
                     }
                 })
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -74,13 +75,13 @@ class LocalMessageBroadcasterTest {
                 .then(() -> broadcaster.broadcast(to("alice")).subscribe())
                 .expectNextCount(1)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> broadcaster.broadcast(to("alice")).subscribe())
                 .expectNextCount(1)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -92,12 +93,12 @@ class LocalMessageBroadcasterTest {
                 .then(() -> broadcaster.broadcast(update).subscribe())
                 .expectNext(update)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     @DisplayName("broadcasting with nobody listening completes rather than failing")
     void broadcast_shouldCompleteWithNoSubscriber() {
-        StepVerifier.create(broadcaster.broadcast(to("nobody"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(to("nobody"))).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

@@ -18,6 +18,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,7 +52,7 @@ class CallSocketControllerTest {
                     assertThat(frame.actorId()).isEqualTo("alice");
                     assertThat(frame.call().media()).isEqualTo("VIDEO");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(liveSessions).attach(eq("bob"), any());
     }
 
@@ -63,6 +64,6 @@ class CallSocketControllerTest {
         StepVerifier.create(controller.streamEvents(jwt))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

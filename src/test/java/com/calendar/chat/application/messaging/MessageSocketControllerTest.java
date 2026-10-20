@@ -36,6 +36,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -80,7 +81,7 @@ class MessageSocketControllerTest {
         // The client claims someone else's name in senderUsername: ignored.
         ChatInputDTO input = new ChatInputDTO("attacker-claimed-name", "receiver-1", "conv-1", "hello");
 
-        StepVerifier.create(controller.sendMessage(jwt, input)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(controller.sendMessage(jwt, input)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<Message> sent = ArgumentCaptor.forClass(Message.class);
         verify(chatService).sendMessage(sent.capture());
@@ -120,7 +121,7 @@ class MessageSocketControllerTest {
 
         StepVerifier.create(controller.streamMessage(jwt))
                 .expectNext(new LiveMessageDTO("m-1", "other", "Other", SENDER_ID, "conv-1", "hi", at, null, MessageType.TEXT, BroadcastKind.NEW))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatService).streamMessages(SENDER_ID);
     }
@@ -134,7 +135,7 @@ class MessageSocketControllerTest {
         // The stream is wrapped to sign photo URLs on the way out: what reaches track is that wrapper.
         when(presenceService.track(eq(SENDER_ID), any())).thenReturn(Flux.empty());
 
-        StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
+        StepVerifier.create(controller.streamMessage(jwt)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(presenceService).track(eq(SENDER_ID), any());
     }
@@ -166,7 +167,7 @@ class MessageSocketControllerTest {
                     assertThat(frame.kind()).isEqualTo(BroadcastKind.NEW);
                     assertThat(frame.photo().url()).isEqualTo("https://signed");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -177,7 +178,7 @@ class MessageSocketControllerTest {
         Flux<Object> tracked = Flux.empty();
         when(presenceService.track(eq(SENDER_ID), any())).thenReturn(tracked);
 
-        StepVerifier.create(controller.streamMessage(jwt)).verifyComplete();
+        StepVerifier.create(controller.streamMessage(jwt)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(liveSessions).attach(SENDER_ID, tracked);
     }
@@ -192,7 +193,7 @@ class MessageSocketControllerTest {
         StepVerifier.create(controller.streamMessage(jwt))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -213,12 +214,12 @@ class MessageSocketControllerTest {
         StepVerifier.create(wired.streamMessage(jwt))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
         StepVerifier.create(wired.streamMessage(jwt))
                 .expectErrorMatches(error -> error instanceof TechnicalException technical
                         && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
-                .verify();
-        StepVerifier.create(presence.heartbeat()).verifyComplete();
+                .verify(Duration.ofSeconds(10));
+        StepVerifier.create(presence.heartbeat()).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(presenceRepository, never()).connect(anyString(), anyString(), anyString(), any());
         verify(presenceRepository, never()).refresh(any(), any());

@@ -3,20 +3,38 @@ package com.calendar.chat.exception;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.MethodParameter;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
+import org.springframework.mock.web.server.MockServerWebExchange;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.support.WebExchangeBindException;
+import org.springframework.web.reactive.result.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 class GlobalErrorHandlerTest {
 
@@ -89,7 +107,7 @@ class GlobalErrorHandlerTest {
     }
 
     private double technicalErrors(String code) {
-        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS).tag(GlobalErrorHandler.CODE_TAG, code).counter();
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).tag(GlobalErrorHandler.CODE_TAG, code).counter();
         return counter == null ? 0 : counter.count();
     }
 
@@ -135,7 +153,7 @@ class GlobalErrorHandlerTest {
                 .exchange()
                 .expectStatus().is5xxServerError()
                 .expectBody()
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.UNEXPECTED_FAILURE)
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)
                 .jsonPath("$.detail").value(detail -> {
                     // The message carried a Mongo URI with a password.
                     if (detail.toString().contains("hunter2") || detail.toString().contains("mongodb")) {
@@ -157,7 +175,7 @@ class GlobalErrorHandlerTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(404)
                 .jsonPath("$.title").isEqualTo("Not Found")
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED);
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE);
     }
 
     @Test
@@ -169,7 +187,7 @@ class GlobalErrorHandlerTest {
                 .expectBody()
                 .jsonPath("$.status").isEqualTo(405)
                 .jsonPath("$.title").isEqualTo("Method Not Allowed")
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED);
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.REQUEST_REFUSED_CODE);
     }
 
     @Test
@@ -237,10 +255,10 @@ class GlobalErrorHandlerTest {
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
-                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.VALIDATION_FAILED)
+                .jsonPath("$.code").isEqualTo(GlobalErrorHandler.VALIDATION_FAILED_CODE)
                 .jsonPath("$.errors.content").isEqualTo("must not be blank");
 
-        assertThat(technicalErrors(GlobalErrorHandler.VALIDATION_FAILED)).isZero();
+        assertThat(technicalErrors(GlobalErrorHandler.VALIDATION_FAILED_CODE)).isZero();
     }
 
     @Test
@@ -259,7 +277,7 @@ class GlobalErrorHandlerTest {
     void handleUnexpectedException_shouldCountTheFailure() {
         client.get().uri("/generic-error").exchange().expectStatus().is5xxServerError();
 
-        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE)).isEqualTo(1);
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1);
     }
 
     @Test
@@ -268,6 +286,134 @@ class GlobalErrorHandlerTest {
         client.get().uri("/not-found").exchange().expectStatus().isNotFound();
         client.get().uri("/gone").exchange().expectStatus().isNotFound();
 
-        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS).counters()).isEmpty();
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters()).isEmpty();
+    }
+
+    private static MockServerWebExchange exchange() {
+        return MockServerWebExchange.from(MockServerHttpRequest.get("/chat-service/x"));
+    }
+
+    @Test
+    @DisplayName("handle maps each kind of failure exactly as the matching @ExceptionHandler does")
+    void handle_shouldMapEachFailure_likeItsExceptionHandler() {
+        GlobalErrorHandler handler = new GlobalErrorHandler(meterRegistry);
+
+        assertThat(handler.handle(new BusinessException(BusinessErrorCode.CALL_FULL), exchange()).getProperties())
+                .containsEntry(ProblemDetails.CODE_PROPERTY, "CHT-BUS-009");
+        assertThat(handler.handle(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE), exchange()).getStatus())
+                .isEqualTo(502);
+        assertThat(handler.handle(new ResponseStatusException(HttpStatus.NOT_FOUND), exchange()).getProperties())
+                .containsEntry(ProblemDetails.CODE_PROPERTY, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        assertThat(handler.handle(new IllegalStateException("boom"), exchange()).getProperties())
+                .containsEntry(ProblemDetails.CODE_PROPERTY, GlobalErrorHandler.UNEXPECTED_FAILURE_CODE);
+
+        assertThat(technicalErrors("CHT-TEC-001")).isEqualTo(1);
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an Error, not an Exception, is still answered and counted as unexpected")
+    void handle_shouldAnswerAnError_asUnexpected() {
+        ProblemDetail problem = new GlobalErrorHandler(meterRegistry).handle(new AssertionError("boom"), exchange());
+
+        assertThat(problem.getStatus()).isEqualTo(500);
+        assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE_PROPERTY,
+                GlobalErrorHandler.UNEXPECTED_FAILURE_CODE);
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE)).isEqualTo(1);
+    }
+
+    @Test
+    void handle_shouldListTheOffendingFields_forAValidationFailure() throws NoSuchMethodException {
+        BeanPropertyBindingResult result = new BeanPropertyBindingResult(new Object(), "request");
+        result.addError(new FieldError("request", "content", "must not be blank"));
+        MethodParameter parameter = new MethodParameter(TestController.class.getDeclaredMethod("invalid"), -1);
+
+        ProblemDetail problem = new GlobalErrorHandler(meterRegistry)
+                .handle(new WebExchangeBindException(parameter, result), exchange());
+
+        assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE_PROPERTY,
+                GlobalErrorHandler.VALIDATION_FAILED_CODE);
+        assertThat(problem.getProperties().get("errors")).isEqualTo(java.util.Map.of("content", "must not be blank"));
+    }
+
+    /**
+     * The same failures in the real application: every filter, every exception handler and the
+     * framework's own advice are there, which a controller bound alone cannot show. Errors the
+     * framework raises before or around a controller must still answer this service's problem.
+     */
+    @Nested
+    @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+    @ActiveProfiles("test")
+    class InTheApplication {
+
+        private static final String TOKEN = "test-token";
+
+        @Value("${local.server.port}")
+        private int port;
+
+        @MockitoBean
+        private ReactiveJwtDecoder jwtDecoder;
+
+        @Autowired
+        private ApplicationContext context;
+
+        private WebTestClient server() {
+            Jwt jwt = Jwt.withTokenValue(TOKEN).header("alg", "none").claim("businessId", "user-1").build();
+            when(jwtDecoder.decode(anyString())).thenReturn(Mono.just(jwt));
+            return WebTestClient.bindToServer()
+                    .baseUrl("http://localhost:" + port)
+                    .responseTimeout(Duration.ofSeconds(30))
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + TOKEN)
+                    .build();
+        }
+
+        private void assertOurProblem(WebTestClient.ResponseSpec response, int status, String code) {
+            response.expectStatus().isEqualTo(status)
+                    .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)
+                    .expectBody()
+                    .jsonPath("$.status").isEqualTo(status)
+                    .jsonPath("$.code").isEqualTo(code)
+                    .jsonPath("$.requestId").value(id -> assertThat(id).asString().isNotBlank());
+        }
+
+        @Test
+        @DisplayName("Boot's ProblemDetailsExceptionHandler is not registered: @EnableWebFlux turns its auto-configuration off")
+        void context_shouldHoldNoFrameworkProblemAdvice() {
+            assertThat(context.getBeansOfType(ResponseEntityExceptionHandler.class)).isEmpty();
+        }
+
+        @Test
+        void unknownPath_shouldAnswer404AsOurProblem() {
+            assertOurProblem(server().get().uri("/chat-service/no-such-path").exchange(),
+                    404, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        }
+
+        @Test
+        void wrongMethod_shouldAnswer405AsOurProblem() {
+            assertOurProblem(server().delete().uri("/chat-service/conversations/all").exchange(),
+                    405, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        }
+
+        @Test
+        void unsupportedContentType_shouldAnswer415AsOurProblem() {
+            assertOurProblem(server().post().uri("/chat-service/calls")
+                            .contentType(MediaType.TEXT_PLAIN).bodyValue("conversation").exchange(),
+                    415, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        }
+
+        @Test
+        void unreadableBody_shouldAnswer400AsOurProblem() {
+            assertOurProblem(server().post().uri("/chat-service/calls")
+                            .contentType(MediaType.APPLICATION_JSON).bodyValue("{not json").exchange(),
+                    400, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        }
+
+        @Test
+        @DisplayName("a parameter of the wrong type is an invalid field: 400")
+        void invalidField_shouldAnswer400AsOurProblem() {
+            assertOurProblem(server().get().uri("/chat-service/conversations/conv-1/loadMessages?bucketIndex=abc")
+                            .exchange(),
+                    400, GlobalErrorHandler.REQUEST_REFUSED_CODE);
+        }
     }
 }

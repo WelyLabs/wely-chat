@@ -23,6 +23,7 @@ import reactor.test.StepVerifier;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,7 +59,7 @@ class MongoDeletedUserMarkersAdapterTest {
     void markDeleted_shouldInsertTheMarker() {
         when(repository.insert(any(DeletedUserMarkerEntity.class))).thenAnswer(call -> Mono.just(call.getArgument(0)));
 
-        StepVerifier.create(adapter.markDeleted("alice", DELETED_AT)).verifyComplete();
+        StepVerifier.create(adapter.markDeleted("alice", DELETED_AT)).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<DeletedUserMarkerEntity> inserted = ArgumentCaptor.forClass(DeletedUserMarkerEntity.class);
         verify(repository).insert(inserted.capture());
@@ -71,7 +72,7 @@ class MongoDeletedUserMarkersAdapterTest {
     void markDeleted_shouldSucceed_whenTheMarkerAlreadyExists() {
         when(repository.insert(any(DeletedUserMarkerEntity.class))).thenReturn(Mono.error(new DuplicateKeyException("dup")));
 
-        StepVerifier.create(adapter.markDeleted("alice", DELETED_AT)).verifyComplete();
+        StepVerifier.create(adapter.markDeleted("alice", DELETED_AT)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -80,14 +81,14 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.markDeleted("alice", DELETED_AT))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void markErased_shouldSetErasedAt() {
         when(repository.markErased("alice", ERASED_AT)).thenReturn(Mono.just(1L));
 
-        StepVerifier.create(adapter.markErased("alice", ERASED_AT)).verifyComplete();
+        StepVerifier.create(adapter.markErased("alice", ERASED_AT)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(repository).markErased("alice", ERASED_AT);
     }
@@ -98,7 +99,7 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.markErased("alice", ERASED_AT))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -107,14 +108,14 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.find("alice"))
                 .expectNext(new DeletedUserMarker("alice", DELETED_AT, ERASED_AT))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void find_shouldBeEmpty_whenThereIsNoMarker() {
         when(repository.findById("bob")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.find("bob")).verifyComplete();
+        StepVerifier.create(adapter.find("bob")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -123,14 +124,14 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.find("alice"))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void isDeleted_shouldDelegateToExistsById() {
         when(repository.existsById("alice")).thenReturn(Mono.just(true));
 
-        StepVerifier.create(adapter.isDeleted("alice")).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.isDeleted("alice")).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -140,14 +141,14 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.isDeleted("alice"))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void findDeletedAmong_shouldReturnTheIdsFound() {
         when(repository.findIdsIn(List.of("alice", "bob"))).thenReturn(Flux.just(new DeletedUserMarkerEntity("bob", null, null)));
 
-        StepVerifier.create(adapter.findDeletedAmong(List.of("alice", "bob"))).expectNext("bob").verifyComplete();
+        StepVerifier.create(adapter.findDeletedAmong(List.of("alice", "bob"))).expectNext("bob").expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -156,19 +157,19 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.findDeletedAmong(List.of("alice")))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
     void erasedAmong_shouldReturnTheIdsWhoseErasureRan() {
         when(repository.findErasedIdsIn(List.of("alice", "bob"))).thenReturn(Flux.just(new DeletedUserMarkerEntity("alice", null, null)));
 
-        StepVerifier.create(adapter.erasedAmong(List.of("alice", "bob"))).expectNext(Set.of("alice")).verifyComplete();
+        StepVerifier.create(adapter.erasedAmong(List.of("alice", "bob"))).expectNext(Set.of("alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void erasedAmong_shouldNotQuery_whenNoIdIsGiven() {
-        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).verifyComplete();
+        StepVerifier.create(adapter.erasedAmong(List.of())).expectNext(Set.of()).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(repository);
     }
@@ -179,6 +180,6 @@ class MongoDeletedUserMarkersAdapterTest {
 
         StepVerifier.create(adapter.erasedAmong(List.of("alice")))
                 .expectErrorMatches(MongoDeletedUserMarkersAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

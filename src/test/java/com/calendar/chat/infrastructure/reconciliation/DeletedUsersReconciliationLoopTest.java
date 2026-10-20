@@ -131,7 +131,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -140,7 +140,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -149,7 +149,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -158,7 +158,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -167,7 +167,7 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -202,6 +202,6 @@ class DeletedUsersReconciliationLoopTest {
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

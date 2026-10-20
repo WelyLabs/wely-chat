@@ -13,6 +13,7 @@ import org.springframework.cloud.stream.function.StreamBridge;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,7 +48,7 @@ class KafkaMessageBroadcasterTest {
     @Test
     @DisplayName("broadcasting publishes to the outbound binding rather than to local subscribers")
     void broadcast_shouldPublishToTheBinding() {
-        StepVerifier.create(broadcaster.broadcast(to("alice"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(to("alice"))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(streamBridge).send(eq(KafkaMessageBroadcaster.DESTINATION), any(MessageBroadcastDTO.class));
     }
@@ -61,7 +62,7 @@ class KafkaMessageBroadcasterTest {
                 .then(() -> broadcaster.broadcast(to("alice")).subscribe())
                 .expectNoEvent(java.time.Duration.ofMillis(50))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -72,7 +73,7 @@ class KafkaMessageBroadcasterTest {
         // Deliberate: the message is already in MongoDB by the time this runs, so raising here
         // would report a failed send for a message that was in fact saved. The live update is
         // lost and logged; the client sees it on the next load.
-        StepVerifier.create(broadcaster.broadcast(to("alice"))).verifyComplete();
+        StepVerifier.create(broadcaster.broadcast(to("alice"))).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -85,7 +86,7 @@ class KafkaMessageBroadcasterTest {
                 })
                 .assertNext(live -> assertThat(live.message().receiverId()).isEqualTo("alice"))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -101,7 +102,7 @@ class KafkaMessageBroadcasterTest {
                 })
                 .assertNext(live -> assertThat(live.message().receiverId()).isEqualTo("alice"))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -113,7 +114,7 @@ class KafkaMessageBroadcasterTest {
                 .then(() -> broadcaster.accept(mapper.toBroadcastDTO(update)))
                 .assertNext(live -> assertThat(live.kind()).isEqualTo(BroadcastKind.UPDATED))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -126,7 +127,7 @@ class KafkaMessageBroadcasterTest {
                 .then(() -> broadcaster.accept(legacy))
                 .assertNext(live -> assertThat(live.kind()).isEqualTo(BroadcastKind.NEW))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -136,12 +137,12 @@ class KafkaMessageBroadcasterTest {
                 .then(() -> broadcaster.accept(mapper.toBroadcastDTO(to("alice"))))
                 .expectNextCount(1)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         StepVerifier.create(broadcaster.subscribe("alice"))
                 .then(() -> broadcaster.accept(mapper.toBroadcastDTO(to("alice"))))
                 .expectNextCount(1)
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

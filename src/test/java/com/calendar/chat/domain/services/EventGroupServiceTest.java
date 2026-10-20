@@ -11,6 +11,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.util.List;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -37,7 +38,7 @@ class EventGroupServiceTest {
         EventGroup group = new EventGroup("event-1", "Board games", "ines", List.of("ines", "me"), 2);
         when(chatRepository.saveEventGroup(group)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.apply(group)).verifyComplete();
+        StepVerifier.create(service.apply(group)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatRepository).saveEventGroup(group);
         verify(chatRepository, never()).closeEventGroup(anyString(), org.mockito.ArgumentMatchers.anyLong());
@@ -49,7 +50,7 @@ class EventGroupServiceTest {
         when(chatRepository.closeEventGroup("event-1", 5)).thenReturn(Mono.just("conv-9"));
         when(photoService.purgeConversation("conv-9")).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.apply(deleted)).verifyComplete();
+        StepVerifier.create(service.apply(deleted)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(photoService).purgeConversation("conv-9");
         verify(chatRepository, never()).saveEventGroup(deleted);
@@ -60,7 +61,7 @@ class EventGroupServiceTest {
         EventGroup deleted = new EventGroup("event-1", "Board games", null, List.of(), 5, true);
         when(chatRepository.closeEventGroup("event-1", 5)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.apply(deleted)).verifyComplete();
+        StepVerifier.create(service.apply(deleted)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(photoService, never()).purgeConversation(anyString());
     }

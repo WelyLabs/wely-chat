@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -73,7 +74,7 @@ class UsersApiDeletedUsersAdapterTest {
 
     @Test
     void page_shouldSendTheReaderSecretAndTheLimit_withoutAfter_onTheFirstPage() {
-        StepVerifier.create(adapter().page(null, 500)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter().page(null, 500)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         ClientRequest request = sent.getFirst();
         assertThat(request.url().toString()).isEqualTo(URL + "/user-service/internal/deleted-users?limit=500");
@@ -83,7 +84,7 @@ class UsersApiDeletedUsersAdapterTest {
     @Test
     @DisplayName("the cursor is sent as a query value, encoded whatever characters it holds")
     void page_shouldEncodeTheCursor_whenFollowingAPage() {
-        StepVerifier.create(adapter().page("a+b/c=&d", 500)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(adapter().page("a+b/c=&d", 500)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().url().getRawQuery()).isEqualTo("limit=500&after=a%2Bb%2Fc%3D%26d");
     }
@@ -99,7 +100,7 @@ class UsersApiDeletedUsersAdapterTest {
                 .expectNext(new DeletedUsersPage(
                         List.of(new DeletedUser("89a380b8-0000-4000-8000-000000000001", DELETED_AT)),
                         "MjAyNi0xMC0xNVQxNDowMzoyNy4xMjNafDg5YTM4MGI4"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -107,7 +108,7 @@ class UsersApiDeletedUsersAdapterTest {
     void page_shouldMapAnEmptyItemsList_toAnEmptyLastPage() {
         StepVerifier.create(adapter().page(null, 500))
                 .expectNext(new DeletedUsersPage(List.of(), null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @ParameterizedTest
@@ -118,7 +119,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -126,7 +127,7 @@ class UsersApiDeletedUsersAdapterTest {
     void page_shouldFailWithoutCalling_whenTheUrlIsNotSet() {
         StepVerifier.create(adapter("", SECRET).page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         assertThat(sent).isEmpty();
     }
@@ -136,7 +137,7 @@ class UsersApiDeletedUsersAdapterTest {
     void page_shouldFailWithoutCalling_whenTheSecretIsNotSet() {
         StepVerifier.create(adapter(URL, " ").page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         assertThat(sent).isEmpty();
     }
@@ -148,7 +149,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page("c1", 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -157,7 +158,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -166,7 +167,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -176,7 +177,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -186,7 +187,7 @@ class UsersApiDeletedUsersAdapterTest {
 
         StepVerifier.create(adapter().page(null, 500))
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -195,11 +196,11 @@ class UsersApiDeletedUsersAdapterTest {
         answer = () -> Mono.error(refused);
 
         StepVerifier.create(adapter().page(null, 500))
-                .verifyErrorSatisfies(error -> {
+                .consumeErrorWith(error -> {
                     assertThat(usersUnavailable(error)).isTrue();
                     // Kept as the cause, so the ERROR log shows why wely-users could not be read.
                     assertThat(error).hasRootCause(refused);
-                });
+                }).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -207,15 +208,15 @@ class UsersApiDeletedUsersAdapterTest {
         answer = () -> Mono.just(json(HttpStatus.OK, "{}"));
 
         StepVerifier.create(adapter().page(null, 500))
-                .verifyErrorSatisfies(error -> assertThat(error.getCause())
+                .consumeErrorWith(error -> assertThat(error.getCause())
                         .isInstanceOf(IllegalStateException.class)
-                        .hasMessage("wely-users answered without items"));
+                        .hasMessage("wely-users answered without items")).verify(Duration.ofSeconds(10));
     }
 
     @Test
     void page_shouldCarryNoCause_whenNotConfigured() {
         StepVerifier.create(adapter("", SECRET).page(null, 500))
-                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isNull());
+                .consumeErrorWith(error -> assertThat(error.getCause()).isNull()).verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -228,5 +229,25 @@ class UsersApiDeletedUsersAdapterTest {
                 .thenAwait(UsersApiDeletedUsersAdapter.TIMEOUT)
                 .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
                 .verify();
+    }
+
+    private static String stackTraceOf(Throwable failure) {
+        java.io.StringWriter trace = new java.io.StringWriter();
+        failure.printStackTrace(new java.io.PrintWriter(trace));
+        return trace.toString();
+    }
+
+    @Test
+    @DisplayName("a real failed call, kept as the cause, never prints the reader secret: it travels in a header")
+    void page_shouldNotLogTheReaderSecret_ofARealFailedCall() {
+        String url = "http://unreachable.invalid:8082";
+        WebClient client = new UsersApiClientConfig().usersWebClient(url, SECRET);
+        UsersApiDeletedUsersAdapter real =
+                new UsersApiDeletedUsersAdapter(client, Mappers.getMapper(DeletedUsersMapper.class), url, SECRET);
+
+        StepVerifier.create(real.page(null, 500))
+                .consumeErrorWith(error -> assertThat(stackTraceOf(error))
+                        .contains("unreachable.invalid").doesNotContain(SECRET))
+                .verify(java.time.Duration.ofSeconds(10));
     }
 }

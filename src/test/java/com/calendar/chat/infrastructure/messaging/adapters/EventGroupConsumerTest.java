@@ -21,6 +21,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -56,7 +57,7 @@ class EventGroupConsumerTest {
     void eventGroup_shouldApplyEachRecord() {
         when(eventGroupService.apply(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).verifyComplete();
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(eventGroupService, timeout(2000)).apply(new EventGroup("e1", "t", "a", List.of("a"), 1));
         verify(eventGroupService, timeout(2000)).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
@@ -74,7 +75,7 @@ class EventGroupConsumerTest {
         }));
         when(eventGroupService.apply(next)).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).verifyComplete();
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(record("e1"), record("e2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(eventGroupService, timeout(20_000)).apply(next);
@@ -86,7 +87,7 @@ class EventGroupConsumerTest {
     void eventGroup_shouldSkipAnUnreadableRecord() {
         when(eventGroupService.apply(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.eventGroup().apply(Flux.just(raw("not json"), record("e2")))).verifyComplete();
+        StepVerifier.create(consumer.eventGroup().apply(Flux.just(raw("not json"), record("e2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(eventGroupService).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
     }

@@ -43,7 +43,7 @@ class LiveSessionsTest {
 
     @Test
     void attach_shouldRelayTheStream_whenTheUserIsActive() {
-        StepVerifier.create(sessions.attach("alice", Flux.just("a", "b"))).expectNext("a", "b").verifyComplete();
+        StepVerifier.create(sessions.attach("alice", Flux.just("a", "b"))).expectNext("a", "b").expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -55,7 +55,7 @@ class LiveSessionsTest {
         StepVerifier.create(sessions.attach("alice", stream.flux()))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         stream.assertWasNotSubscribed();
         assertThat(sessions.sessionCount()).isZero();
@@ -63,14 +63,14 @@ class LiveSessionsTest {
 
     @Test
     void attach_shouldForgetTheSession_whenTheStreamCompletesFailsOrIsCancelled() {
-        StepVerifier.create(sessions.attach("alice", Flux.just("a"))).expectNext("a").verifyComplete();
+        StepVerifier.create(sessions.attach("alice", Flux.just("a"))).expectNext("a").expectComplete().verify(Duration.ofSeconds(10));
         StepVerifier.create(sessions.attach("alice", Flux.error(new IllegalStateException("broker down"))))
-                .verifyError(IllegalStateException.class);
+                .expectError(IllegalStateException.class).verify(Duration.ofSeconds(10));
         TestPublisher<String> open = TestPublisher.create();
         StepVerifier.create(sessions.attach("alice", open.flux()))
                 .then(() -> assertThat(sessions.sessionCount()).isEqualTo(1))
                 .thenCancel()
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         assertThat(sessions.sessionCount()).isZero();
     }
@@ -88,7 +88,7 @@ class LiveSessionsTest {
         StepVerifier bobs = StepVerifier.create(sessions.attach("bob", bob.flux()))
                 .expectNext("still here").expectComplete().verifyLater();
 
-        StepVerifier.create(sessions.close("alice")).verifyComplete();
+        StepVerifier.create(sessions.close("alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         phone.verify(Duration.ofSeconds(5));
         laptop.verify(Duration.ofSeconds(5));
@@ -101,7 +101,7 @@ class LiveSessionsTest {
 
     @Test
     void close_shouldDoNothing_whenTheUserHasNoStreamHere() {
-        StepVerifier.create(sessions.close("nobody")).verifyComplete();
+        StepVerifier.create(sessions.close("nobody")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sessions.sessionCount()).isZero();
     }
@@ -116,7 +116,7 @@ class LiveSessionsTest {
                 .expectComplete().verifyLater();
         StepVerifier.create(sessions.attach("bob", bob.flux())).expectComplete().verifyLater();
 
-        StepVerifier.create(sessions.closeDeleted()).verifyComplete();
+        StepVerifier.create(sessions.closeDeleted()).expectComplete().verify(Duration.ofSeconds(10));
 
         alices.verify(Duration.ofSeconds(5));
         bob.assertNotCancelled();
@@ -126,7 +126,7 @@ class LiveSessionsTest {
 
     @Test
     void closeDeleted_shouldNotQuery_whenNoStreamIsOpen() {
-        StepVerifier.create(sessions.closeDeleted()).verifyComplete();
+        StepVerifier.create(sessions.closeDeleted()).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers, never()).findDeletedAmong(any());
     }

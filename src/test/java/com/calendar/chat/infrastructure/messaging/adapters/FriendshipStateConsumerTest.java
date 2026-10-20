@@ -73,7 +73,7 @@ class FriendshipStateConsumerTest {
     void friendshipState_shouldStoreThePair_fromAValue() {
         when(friendshipService.applyState(new Friendship(ALICE, BOB, 7))).thenReturn(Mono.just(true));
 
-        StepVerifier.create(consumer.friendshipState().apply(Flux.just(friends(7)))).verifyComplete();
+        StepVerifier.create(consumer.friendshipState().apply(Flux.just(friends(7)))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendshipService).applyState(new Friendship(ALICE, BOB, 7));
     }
@@ -82,7 +82,7 @@ class FriendshipStateConsumerTest {
     void friendshipState_shouldEndThePair_fromATombstone() {
         when(friendshipService.applyTombstone(ALICE, BOB)).thenReturn(Mono.just(true));
 
-        StepVerifier.create(consumer.friendshipState().apply(Flux.just(tombstone(KEY)))).verifyComplete();
+        StepVerifier.create(consumer.friendshipState().apply(Flux.just(tombstone(KEY)))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendshipService).applyTombstone(ALICE, BOB);
     }
@@ -90,7 +90,7 @@ class FriendshipStateConsumerTest {
     @Test
     void friendshipState_shouldDropATombstoneWithAMalformedKey() {
         StepVerifier.create(consumer.friendshipState().apply(Flux.just(tombstone("not-a-pair"), tombstone(ALICE + ":" + ALICE))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(friendshipService);
     }
@@ -102,7 +102,7 @@ class FriendshipStateConsumerTest {
 
         StepVerifier.create(consumer.friendshipState().apply(Flux.just(value(ALICE + ":" + other,
                         "{\"a\":\"%s\",\"b\":\"%s\",\"friends\":true,\"version\":1}".formatted(ALICE, BOB)))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(friendshipService);
     }
@@ -113,7 +113,7 @@ class FriendshipStateConsumerTest {
         when(friendshipService.applyState(any())).thenReturn(Mono.just(true));
 
         StepVerifier.create(consumer.friendshipState().apply(Flux.just(value(KEY, "not json"), friends(2))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendshipService).applyState(new Friendship(ALICE, BOB, 2));
     }
@@ -188,7 +188,7 @@ class FriendshipStateConsumerTest {
     void friendshipState_shouldNeverApplyAValueThatIsNotFriends() {
         StepVerifier.create(consumer.friendshipState().apply(Flux.just(value(KEY,
                         "{\"a\":\"%s\",\"b\":\"%s\",\"friends\":false,\"version\":1}".formatted(ALICE, BOB)))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendshipService, never()).applyState(any());
     }

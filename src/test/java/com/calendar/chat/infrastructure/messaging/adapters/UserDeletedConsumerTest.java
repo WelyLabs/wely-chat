@@ -79,7 +79,7 @@ class UserDeletedConsumerTest {
     void userDeleted_shouldEraseTheUser_withTheRecordsDeletedAt() {
         when(erasure.erase(USER, DELETED_AT)).thenReturn(Mono.empty());
 
-        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deletionOf(USER)))).verifyComplete();
+        StepVerifier.create(consumer.userDeleted().apply(Flux.just(deletionOf(USER)))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(erasure).erase(USER, DELETED_AT);
     }
@@ -90,7 +90,7 @@ class UserDeletedConsumerTest {
         when(erasure.erase(USER, null)).thenReturn(Mono.empty());
 
         StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("{\"userId\":\"" + USER + "\"}"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(erasure).erase(USER, null);
     }
@@ -101,7 +101,7 @@ class UserDeletedConsumerTest {
 
         StepVerifier.create(consumer.userDeleted().apply(Flux.just(record(
                         "{\"userId\":\"" + USER + "\",\"deletedAt\":\"2026-10-15T14:03:27.123Z\",\"reason\":\"USER\"}"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(erasure).erase(USER, DELETED_AT);
     }
@@ -112,7 +112,7 @@ class UserDeletedConsumerTest {
         when(erasure.erase(USER, DELETED_AT)).thenReturn(Mono.empty());
 
         StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("not json"), deletionOf(USER))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(erasure, times(1)).erase(anyString(), any());
     }
@@ -121,7 +121,7 @@ class UserDeletedConsumerTest {
     void userDeleted_shouldSkipARecordWithoutUserId() {
         StepVerifier.create(consumer.userDeleted().apply(Flux.just(record("{\"deletedAt\":\"2026-10-15T14:03:27Z\"}"),
                         record("{\"userId\":\"  \"}"))))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(erasure);
     }

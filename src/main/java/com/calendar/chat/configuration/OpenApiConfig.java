@@ -2,6 +2,7 @@ package com.calendar.chat.configuration;
 
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.ProblemDetails;
 import com.calendar.chat.exception.TechnicalErrorCode;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -105,14 +106,14 @@ public class OpenApiConfig {
                 .addProperty("status", new IntegerSchema())
                 .addProperty("detail", new StringSchema())
                 .addProperty("instance", new StringSchema().format("uri"))
-                .addProperty("code", code)
-                .addProperty("timestamp", new DateTimeSchema())
-                .addProperty("requestId", new StringSchema()
+                .addProperty(ProblemDetails.CODE_PROPERTY, code)
+                .addProperty(ProblemDetails.TIMESTAMP_PROPERTY, new DateTimeSchema())
+                .addProperty(ProblemDetails.REQUEST_ID_PROPERTY, new StringSchema()
                         .description("The WebFlux request id, as it appears in this service's logs."))
                 .addProperty("errors", new MapSchema()
                         .additionalProperties(new StringSchema())
                         .description("Invalid fields and why, by field name. Only on "
-                                + GlobalErrorHandler.VALIDATION_FAILED + "."));
+                                + GlobalErrorHandler.VALIDATION_FAILED_CODE + "."));
     }
 
     private static ApiResponse problemResponse(String description) {

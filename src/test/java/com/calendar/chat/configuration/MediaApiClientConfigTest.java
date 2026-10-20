@@ -10,6 +10,7 @@ import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +29,7 @@ class MediaApiClientConfigTest {
 
         StepVerifier.create(client.delete().uri("/internal/media").retrieve().toBodilessEntity())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().url().toString()).isEqualTo("http://wely-media:8085/internal/media");
         assertThat(sent.getFirst().headers().getFirst(MediaApiClientConfig.SECRET_HEADER)).isEqualTo("s3cret");

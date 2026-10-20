@@ -12,6 +12,7 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.mockito.Mockito.when;
 
@@ -33,6 +34,6 @@ class PresenceControllerTest {
 
         StepVerifier.create(controller.getPresence(jwt, "bob"))
                 .expectNext(presence)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 }

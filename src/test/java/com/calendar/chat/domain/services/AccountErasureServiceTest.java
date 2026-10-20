@@ -18,6 +18,7 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -75,7 +76,7 @@ class AccountErasureServiceTest {
     void erase_shouldRunEveryStepInOrder_thenMarkErased() {
         everyStepSucceeds();
 
-        StepVerifier.create(service.erase(USER, DELETED_AT)).verifyComplete();
+        StepVerifier.create(service.erase(USER, DELETED_AT)).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(markers, liveSessions, chatRepository, callService, presenceRepository, friendships);
         order.verify(markers).markDeleted(USER, DELETED_AT);
@@ -94,7 +95,7 @@ class AccountErasureServiceTest {
     void erase_shouldUseTheProcessingTimeAsDeletedAt_whenTheRecordHasNone() {
         everyStepSucceeds();
 
-        StepVerifier.create(service.erase(USER, null)).verifyComplete();
+        StepVerifier.create(service.erase(USER, null)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers).markDeleted(USER, NOW);
     }
@@ -107,7 +108,7 @@ class AccountErasureServiceTest {
         StepVerifier.create(service.erase(USER, DELETED_AT))
                 .expectErrorMatches(error -> error instanceof TechnicalException technical
                         && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).markDirectConversationsReadOnly(any());
         verify(callService, never()).removeUser(any());
@@ -121,7 +122,7 @@ class AccountErasureServiceTest {
         when(markers.markDeleted(USER, DELETED_AT))
                 .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
-        StepVerifier.create(service.erase(USER, DELETED_AT)).expectError(TechnicalException.class).verify();
+        StepVerifier.create(service.erase(USER, DELETED_AT)).expectError(TechnicalException.class).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(liveSessions, chatRepository, callService, presenceRepository, friendships);
         verify(markers, never()).markErased(any(), any());
@@ -132,7 +133,7 @@ class AccountErasureServiceTest {
     void erase_shouldRunEveryStepAgain_whenTheMarkerAlreadyExists() {
         everyStepSucceeds();
 
-        StepVerifier.create(service.erase(USER, DELETED_AT).then(service.erase(USER, DELETED_AT))).verifyComplete();
+        StepVerifier.create(service.erase(USER, DELETED_AT).then(service.erase(USER, DELETED_AT))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(markers, times(2)).markDeleted(USER, DELETED_AT);
         verify(chatRepository, times(2)).anonymizeSender(USER);

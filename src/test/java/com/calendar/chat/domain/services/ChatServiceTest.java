@@ -37,6 +37,7 @@ import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -100,7 +101,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectNext(detail)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -114,7 +115,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectNext(detail)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -125,7 +126,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
     }
@@ -136,7 +137,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user1"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
     }
@@ -149,7 +150,7 @@ class ChatServiceTest {
                 List.of(), 0, null, null);
         when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).verifyComplete();
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -160,7 +161,7 @@ class ChatServiceTest {
                 List.of(), 0, null, null, null, true);
         when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).verifyComplete();
+        StepVerifier.create(chatService.readOrCreateConversation("user1", "user2")).expectNext(detail).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
     }
@@ -172,7 +173,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
     }
@@ -183,7 +184,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).findByParticipantIds(any());
         verify(chatRepository, never()).saveWithInitialBucket(any());
@@ -220,7 +221,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines", "hugo")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
         verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
@@ -242,7 +243,7 @@ class ChatServiceTest {
                     assertThat(sent.id()).isNotBlank();
                     assertThat(sent.content()).isEqualTo("hello");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         verify(chatRepository).postMessage(argThat(stored -> stored.id() != null));
         verify(messageBroadcaster).broadcast(argThat(copy -> copy.message().id() != null
                 && "ines".equals(copy.message().receiverId()) && copy.kind() == BroadcastKind.NEW));
@@ -258,7 +259,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "friend")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).expectComplete().verify(Duration.ofSeconds(10));
 
         order.verify(chatRepository).postMessage(message);
         order.verify(messageBroadcaster).broadcast(addressedTo(message, "friend"));
@@ -275,7 +276,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.sendMessage(message))
                 .expectError(IllegalStateException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -289,7 +290,7 @@ class ChatServiceTest {
         StepVerifier.create(chatService.sendMessage(message))
                 .expectErrorMatches(error -> error instanceof BusinessException
                         && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
@@ -304,7 +305,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.sendMessage(message))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_NOT_FOUND))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -316,7 +317,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).findMembership(any(), any());
         verify(chatRepository, never()).postMessage(any());
@@ -330,7 +331,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_READ_ONLY))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
@@ -344,7 +345,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
@@ -352,7 +353,7 @@ class ChatServiceTest {
 
     @Test
     void requireFriendsInDirect_shouldComplete_whenTheyAreFriends() {
-        StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller")).verifyComplete();
+        StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendships).areFriends("caller", "friend");
     }
@@ -363,7 +364,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller"))
                 .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -372,7 +373,7 @@ class ChatServiceTest {
         ConversationDetail group = new ConversationDetail("conv-2", List.of("caller", "stranger"), ConversationType.EVENT,
                 List.of(), 0, "Quiz", "event-1");
 
-        StepVerifier.create(chatService.requireFriendsInDirect(group, "caller")).verifyComplete();
+        StepVerifier.create(chatService.requireFriendsInDirect(group, "caller")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendships, never()).areFriends(anyString(), anyString());
     }
@@ -386,7 +387,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "gone", "ines")));
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(addressedTo(message, "ines"));
         verify(messageBroadcaster, times(1)).broadcast(any());
@@ -400,7 +401,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines")));
         when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
-        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(chatRepository).postMessage(message);
         verify(messageBroadcaster, never()).broadcast(any());
@@ -419,7 +420,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.streamMessages(userId))
                 .expectNext(message)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).subscribe(userId);
     }
@@ -441,7 +442,7 @@ class ChatServiceTest {
         members("olivia", "olivia", "alice", "bob");
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).verifyComplete();
+        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(addressedTo(updated, "alice", BroadcastKind.UPDATED));
         verify(messageBroadcaster).broadcast(addressedTo(updated, "bob", BroadcastKind.UPDATED));
@@ -459,7 +460,7 @@ class ChatServiceTest {
         when(messageBroadcaster.broadcast(addressedTo(updated, "carol", BroadcastKind.UPDATED)))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.broadcastUpdate(updated, "alice")).verifyComplete();
+        StepVerifier.create(chatService.broadcastUpdate(updated, "alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(addressedTo(updated, "carol", BroadcastKind.UPDATED));
     }
@@ -471,7 +472,7 @@ class ChatServiceTest {
         deleted("gone");
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).verifyComplete();
+        StepVerifier.create(chatService.broadcastUpdate(updated, "olivia")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(addressedTo(updated, "alice", BroadcastKind.UPDATED));
         verify(messageBroadcaster, times(1)).broadcast(any());
@@ -482,7 +483,7 @@ class ChatServiceTest {
         members("olivia", "olivia", "alice");
         when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
-        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "olivia")).verifyComplete();
+        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "olivia")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -491,7 +492,7 @@ class ChatServiceTest {
     void broadcastUpdate_shouldSendNothing_whenTheRequesterIsNotAMember() {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "mallory")).verifyComplete();
+        StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "mallory")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -506,7 +507,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readPreviousMessages(convId, 0, "user1"))
                 .expectNext(bucket)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -517,7 +518,7 @@ class ChatServiceTest {
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.readPreviousMessages(convId, 0, "intruder"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -529,7 +530,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readConversationById(convId, "user1"))
                 .expectNext(detail)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -539,7 +540,7 @@ class ChatServiceTest {
         when(chatRepository.findById(convId, "intruder")).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.readConversationById(convId, "intruder"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -552,7 +553,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.readConversations(userId))
                 .expectNext(summary)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -560,7 +561,7 @@ class ChatServiceTest {
         ConversationDetail detail = new ConversationDetail("conv-1", List.of("me"), null, List.of(), 0, null, null);
         when(chatRepository.findByEventId("event-1", "me")).thenReturn(Mono.just(detail));
 
-        StepVerifier.create(chatService.readEventConversation("event-1", "me")).expectNext(detail).verifyComplete();
+        StepVerifier.create(chatService.readEventConversation("event-1", "me")).expectNext(detail).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     // --- system notices ---------------------------------------------------
@@ -594,7 +595,7 @@ class ChatServiceTest {
                     assertThat(posted.conversationId()).isEqualTo("conv-9");
                     assertThat(posted.id()).isNotBlank();
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
         // Through the system path, never postMessage and its sender check.
         verify(chatRepository, never()).postMessage(any());
     }
@@ -614,7 +615,7 @@ class ChatServiceTest {
                     assertThat(posted.type()).isEqualTo(MessageType.SYSTEM);
                     assertThat(posted.content()).isEqualTo("📞 Appel audio manqué");
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, times(2)).broadcast(any());
     }
@@ -626,7 +627,7 @@ class ChatServiceTest {
                 .thenAnswer(call -> Mono.just(new PostedMessage(call.getArgument(1), List.of("alice"), true)));
 
         StepVerifier.create(chatService.postConversationNotice("conv-3", "call:c1", "x")).expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -639,7 +640,7 @@ class ChatServiceTest {
         StepVerifier.create(chatService.postConversationNotice("gone", "call:c1", "x"))
                 .expectErrorMatches(error -> error instanceof BusinessException business
                         && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -648,7 +649,7 @@ class ChatServiceTest {
         groupStores("event-1", false, "olivia", "ines", "hugo");
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         for (String member : List.of("olivia", "ines", "hugo")) {
             verify(messageBroadcaster).broadcast(argThat(live -> member.equals(live.message().receiverId())
@@ -664,7 +665,7 @@ class ChatServiceTest {
         deleted("gone");
         when(messageBroadcaster.broadcast(any())).thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(argThat(live -> "olivia".equals(live.message().receiverId())));
         verify(messageBroadcaster, times(1)).broadcast(any());
@@ -678,7 +679,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
                 .assertNext(notice -> assertThat(notice.content()).isEqualTo(NOTICE))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -692,7 +693,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.postConversationNotice("conv-3", "call:c1", "📞 Appel audio · 3 min"))
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster).broadcast(argThat(live -> "alice".equals(live.message().receiverId())));
         verify(messageBroadcaster, times(1)).broadcast(any());
@@ -714,7 +715,7 @@ class ChatServiceTest {
                     assertThat(ids.getT3()).isNotEqualTo(ids.getT1());
                     assertThat(ids.getT4()).isNotEqualTo(ids.getT1());
                 })
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -722,7 +723,7 @@ class ChatServiceTest {
     void postSystemNotice_shouldNotBroadcast_whenTheNoticeWasAlreadyStored() {
         groupStores("event-1", true, "olivia", "ines");
 
-        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -736,7 +737,7 @@ class ChatServiceTest {
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
                 .expectErrorMatches(error -> error instanceof BusinessException
                         && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -748,7 +749,7 @@ class ChatServiceTest {
 
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
                 .expectError(IllegalStateException.class)
-                .verify();
+                .verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
     }
@@ -762,7 +763,7 @@ class ChatServiceTest {
         when(messageBroadcaster.broadcast(argThat(live -> live != null && "hugo".equals(live.message().receiverId()))))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, times(2)).broadcast(any());
     }

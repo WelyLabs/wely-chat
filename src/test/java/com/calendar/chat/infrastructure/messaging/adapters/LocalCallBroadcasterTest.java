@@ -28,7 +28,7 @@ class LocalCallBroadcasterTest {
                     broadcaster.broadcast(ringing("bob")).block();
                 })
                 .expectNext(ringing("bob"))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -36,7 +36,7 @@ class LocalCallBroadcasterTest {
         StepVerifier.create(broadcaster.subscribe("bob").take(1))
                 .then(() -> broadcaster.broadcast(ringing("bob")).block())
                 .expectNextCount(1)
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         StepVerifier.create(broadcaster.subscribe("bob").take(1))
                 .then(() -> broadcaster.broadcast(ringing("bob")).block())

@@ -25,6 +25,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,7 +69,7 @@ class MongoCallRepositoryAdapterTest {
         Call ringing = call(CallStatus.RINGING);
         when(repository.save(any())).thenReturn(Mono.just(mapper.toEntity(ringing)));
 
-        StepVerifier.create(adapter.createOrGetLive(ringing)).expectNext(ringing).verifyComplete();
+        StepVerifier.create(adapter.createOrGetLive(ringing)).expectNext(ringing).expectComplete().verify(Duration.ofSeconds(10));
 
         ArgumentCaptor<CallEntity> saved = ArgumentCaptor.forClass(CallEntity.class);
         verify(repository).save(saved.capture());
@@ -81,14 +82,14 @@ class MongoCallRepositoryAdapterTest {
         when(repository.save(any())).thenReturn(Mono.error(new DuplicateKeyException("live call")));
         when(repository.findByConversationIdAndLiveTrue("conv-1")).thenReturn(Mono.just(mapper.toEntity(other)));
 
-        StepVerifier.create(adapter.createOrGetLive(call(CallStatus.RINGING))).expectNext(other).verifyComplete();
+        StepVerifier.create(adapter.createOrGetLive(call(CallStatus.RINGING))).expectNext(other).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void findLive_shouldReadTheConversationsLiveCall() {
         when(repository.findByConversationIdAndLiveTrue("conv-1")).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.findLive("conv-1")).verifyComplete();
+        StepVerifier.create(adapter.findLive("conv-1")).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -96,7 +97,7 @@ class MongoCallRepositoryAdapterTest {
         Call ringing = call(CallStatus.RINGING);
         when(repository.findMemberCall("call-1", "bob")).thenReturn(Mono.just(mapper.toEntity(ringing)));
 
-        StepVerifier.create(adapter.findById("call-1", "bob")).expectNext(ringing).verifyComplete();
+        StepVerifier.create(adapter.findById("call-1", "bob")).expectNext(ringing).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -106,7 +107,7 @@ class MongoCallRepositoryAdapterTest {
         when(repository.pushIfRoom(eq("call-1"), any(), eq(12))).thenReturn(Mono.just(1L));
         stored(joined);
 
-        StepVerifier.create(adapter.addParticipant("call-1", bob(), 12)).expectNext(joined).verifyComplete();
+        StepVerifier.create(adapter.addParticipant("call-1", bob(), 12)).expectNext(joined).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -114,7 +115,7 @@ class MongoCallRepositoryAdapterTest {
         when(repository.pullFromLive("call-1", "bob")).thenReturn(Mono.just(0L));
         when(repository.pushIfRoom(eq("call-1"), any(), eq(2))).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.addParticipant("call-1", bob(), 2)).verifyComplete();
+        StepVerifier.create(adapter.addParticipant("call-1", bob(), 2)).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(repository, never()).findById("call-1");
     }
@@ -125,7 +126,7 @@ class MongoCallRepositoryAdapterTest {
         when(repository.markActive("call-1")).thenReturn(Mono.just(1L));
         stored(active);
 
-        StepVerifier.create(adapter.markActive("call-1")).expectNext(active).verifyComplete();
+        StepVerifier.create(adapter.markActive("call-1")).expectNext(active).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -134,14 +135,14 @@ class MongoCallRepositoryAdapterTest {
         when(repository.addTracks("call-1", "bob", List.of("audio"))).thenReturn(Mono.just(1L));
         stored(call);
 
-        StepVerifier.create(adapter.addTracks("call-1", "bob", List.of("audio"))).expectNext(call).verifyComplete();
+        StepVerifier.create(adapter.addTracks("call-1", "bob", List.of("audio"))).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void touch_shouldBeEmpty_forSomeoneNotInTheCall() {
         when(repository.touch("call-1", "bob", NOW)).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.touch("call-1", "bob", NOW)).verifyComplete();
+        StepVerifier.create(adapter.touch("call-1", "bob", NOW)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -150,14 +151,14 @@ class MongoCallRepositoryAdapterTest {
         when(repository.removeParticipant("call-1", "bob")).thenReturn(Mono.just(1L));
         stored(call);
 
-        StepVerifier.create(adapter.removeParticipant("call-1", "bob")).expectNext(call).verifyComplete();
+        StepVerifier.create(adapter.removeParticipant("call-1", "bob")).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void end_shouldStoreTheStatusByName_andBeEmptyOnceAlreadyEnded() {
         when(repository.end("call-1", "MISSED", NOW)).thenReturn(Mono.just(0L));
 
-        StepVerifier.create(adapter.end("call-1", CallStatus.MISSED, NOW)).verifyComplete();
+        StepVerifier.create(adapter.end("call-1", CallStatus.MISSED, NOW)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -167,9 +168,9 @@ class MongoCallRepositoryAdapterTest {
         when(repository.findLiveWithParticipantSeenBefore(NOW)).thenReturn(Flux.just(mapper.toEntity(call)));
         when(repository.findLiveStartedBefore(NOW)).thenReturn(Flux.<CallEntity>empty());
 
-        StepVerifier.create(adapter.findRingingStartedBefore(NOW)).expectNext(call).verifyComplete();
-        StepVerifier.create(adapter.findLiveWithParticipantSeenBefore(NOW)).expectNext(call).verifyComplete();
-        StepVerifier.create(adapter.findLiveStartedBefore(NOW)).verifyComplete();
+        StepVerifier.create(adapter.findRingingStartedBefore(NOW)).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findLiveWithParticipantSeenBefore(NOW)).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.findLiveStartedBefore(NOW)).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     private static boolean storeUnavailable(Throwable error) {
@@ -181,7 +182,7 @@ class MongoCallRepositoryAdapterTest {
         Call call = call(CallStatus.ACTIVE, bob());
         when(repository.findLiveInvolving("bob")).thenReturn(Flux.just(mapper.toEntity(call)));
 
-        StepVerifier.create(adapter.findLiveInvolving("bob")).expectNext(call).verifyComplete();
+        StepVerifier.create(adapter.findLiveInvolving("bob")).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -191,7 +192,7 @@ class MongoCallRepositoryAdapterTest {
 
         StepVerifier.create(adapter.findLiveInvolving("bob"))
                 .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -199,7 +200,7 @@ class MongoCallRepositoryAdapterTest {
         when(repository.pullFromEnded("bob")).thenReturn(Mono.just(4L));
         when(repository.clearStarterName("bob")).thenReturn(Mono.just(2L));
 
-        StepVerifier.create(adapter.removeFromEndedCalls("bob")).verifyComplete();
+        StepVerifier.create(adapter.removeFromEndedCalls("bob")).expectComplete().verify(Duration.ofSeconds(10));
 
         InOrder order = inOrder(repository);
         order.verify(repository).pullFromEnded("bob");
@@ -214,7 +215,7 @@ class MongoCallRepositoryAdapterTest {
 
         StepVerifier.create(adapter.removeFromEndedCalls("bob"))
                 .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -224,6 +225,6 @@ class MongoCallRepositoryAdapterTest {
 
         StepVerifier.create(adapter.removeFromEndedCalls("bob"))
                 .expectErrorMatches(MongoCallRepositoryAdapterTest::storeUnavailable)
-                .verify();
+                .verify(Duration.ofSeconds(10));
     }
 }

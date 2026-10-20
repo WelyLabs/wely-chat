@@ -17,6 +17,7 @@ import reactor.test.StepVerifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -61,7 +62,7 @@ class CloudflareTurnAdapterTest {
                         new IceServer(List.of("stun:stun.cloudflare.com:3478"), null, null),
                         new IceServer(List.of("turn:turn.cloudflare.com:3478?transport=udp",
                                 "turns:turn.cloudflare.com:443?transport=tcp"), "u", "c")))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent.getFirst().getURI().toString())
                 .isEqualTo("https://rtc.example/v1/turn/keys/key-1/credentials/generate-ice-servers");
@@ -70,7 +71,7 @@ class CloudflareTurnAdapterTest {
 
     @Test
     void iceServers_shouldFallBackOnStun_withoutATurnKey() {
-        StepVerifier.create(adapterFor("").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).verifyComplete();
+        StepVerifier.create(adapterFor("").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(sent).isEmpty();
     }
@@ -79,13 +80,13 @@ class CloudflareTurnAdapterTest {
     void iceServers_shouldFallBackOnStun_whenCloudflareFails() {
         answer = json(HttpStatus.INTERNAL_SERVER_ERROR, "{}");
 
-        StepVerifier.create(adapterFor("key-1").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).verifyComplete();
+        StepVerifier.create(adapterFor("key-1").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void iceServers_shouldFallBackOnStun_whenTheAnswerHasNoServer() {
         answer = json(HttpStatus.CREATED, "{\"iceServers\":[]}");
 
-        StepVerifier.create(adapterFor("key-1").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).verifyComplete();
+        StepVerifier.create(adapterFor("key-1").iceServers()).expectNext(CloudflareTurnAdapter.STUN_ONLY).expectComplete().verify(Duration.ofSeconds(10));
     }
 }

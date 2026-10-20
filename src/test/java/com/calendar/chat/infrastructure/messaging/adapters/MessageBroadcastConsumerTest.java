@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 
 import java.time.Instant;
 import java.util.function.Function;
+import java.time.Duration;
 
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -55,7 +56,7 @@ class MessageBroadcastConsumerTest {
     @Test
     @DisplayName("each record's payload is handed to the broadcaster")
     void messageBroadcast_shouldDispatchEveryRecord() {
-        StepVerifier.create(consumer.apply(Flux.just(record("m-1"), record("m-2")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(record("m-1"), record("m-2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(payload("m-1"));
         verify(broadcaster).accept(payload("m-2"));
@@ -68,7 +69,7 @@ class MessageBroadcastConsumerTest {
         // silently deaf until it restarts, which is the failure mode this guards against.
         doThrow(new IllegalStateException("boom")).when(broadcaster).accept(payload("m-1"));
 
-        StepVerifier.create(consumer.apply(Flux.just(record("m-1"), record("m-2")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(record("m-1"), record("m-2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(payload("m-2"));
     }
@@ -81,7 +82,7 @@ class MessageBroadcastConsumerTest {
                 + "\"receiverId\":\"alice\",\"conversationId\":\"conv-1\",\"content\":\"hi\","
                 + "\"timestamp\":\"2026-10-12T23:44:46\"}";
 
-        StepVerifier.create(consumer.apply(Flux.just(raw(oldFormat), raw("not json"), record("m-1")))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(raw(oldFormat), raw("not json"), record("m-1")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(payload("m-1"));
         verify(broadcaster, times(1)).accept(any());
@@ -94,7 +95,7 @@ class MessageBroadcastConsumerTest {
                 + "\"receiverId\":\"alice\",\"conversationId\":\"conv-1\",\"content\":\"hi\","
                 + "\"timestamp\":\"2025-01-01T12:00:00Z\"}";
 
-        StepVerifier.create(consumer.apply(Flux.just(raw(legacy)))).verifyComplete();
+        StepVerifier.create(consumer.apply(Flux.just(raw(legacy)))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(broadcaster).accept(new MessageBroadcastDTO("m-0", "sender", "Sender", "alice", "conv-1", "hi",
                 SENT_AT, null, null, null));
@@ -106,7 +107,7 @@ class MessageBroadcastConsumerTest {
         // Not the same case as a failing record: a connection drop belongs to the binder, which
         // subscribes to the function's result, so it must come out of it untouched.
         StepVerifier.create(consumer.apply(Flux.error(new IllegalStateException("broker gone"))))
-                .verifyErrorMessage("broker gone");
+                .expectErrorMessage("broker gone").verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(broadcaster);
     }

@@ -17,6 +17,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import reactor.test.StepVerifier;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The friendships projection against a real MongoDB, opt-in with {@code -Dintegration.tests=true} or {@code CI=true}. */
@@ -51,11 +53,11 @@ class MongoFriendshipDirectoryAdapterIntegrationTest {
 
     @Test
     void saveIfNewer_shouldMakeThemFriends_whicheverSideIsAsked() {
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(BOB, ALICE, 1))).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(BOB, ALICE, 1))).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(true).verifyComplete();
-        StepVerifier.create(adapter.areFriends(BOB, ALICE)).expectNext(true).verifyComplete();
-        StepVerifier.create(adapter.areFriends(ALICE, CAROL)).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.areFriends(BOB, ALICE)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.areFriends(ALICE, CAROL)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -63,20 +65,20 @@ class MongoFriendshipDirectoryAdapterIntegrationTest {
     void end_shouldKeepTheVersion_soAnOlderValueCannotReviveThePair() {
         adapter.saveIfNewer(new Friendship(ALICE, BOB, 5)).block();
 
-        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(true).verifyComplete();
-        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(false).verifyComplete();
-        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.end(ALICE, BOB)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 5))).expectNext(false).verifyComplete();
-        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 5))).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
 
-        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 6))).expectNext(true).verifyComplete();
-        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(true).verifyComplete();
+        StepVerifier.create(adapter.saveIfNewer(new Friendship(ALICE, BOB, 6))).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
+        StepVerifier.create(adapter.areFriends(ALICE, BOB)).expectNext(true).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
     void end_shouldAnswerFalse_forAPairNeverStored() {
-        StepVerifier.create(adapter.end(ALICE, CAROL)).expectNext(false).verifyComplete();
+        StepVerifier.create(adapter.end(ALICE, CAROL)).expectNext(false).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -85,7 +87,7 @@ class MongoFriendshipDirectoryAdapterIntegrationTest {
         adapter.saveIfNewer(new Friendship(CAROL, ALICE, 1)).block();
         adapter.saveIfNewer(new Friendship(BOB, CAROL, 1)).block();
 
-        StepVerifier.create(adapter.forget(ALICE)).verifyComplete();
+        StepVerifier.create(adapter.forget(ALICE)).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(mongoTemplate.findAll(FriendshipEntity.class).map(FriendshipEntity::getId).collectList().block())
                 .containsExactly(Friendship.pairIdOf(BOB, CAROL));

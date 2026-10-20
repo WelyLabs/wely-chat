@@ -116,7 +116,7 @@ class MongoPresenceRepositoryAdapterIntegrationTest {
     void find_shouldAnswerForAnUnknownUser() {
         StepVerifier.create(adapter.find("nobody", NOW.minusSeconds(90)))
                 .expectNext(new Presence("nobody", false, null))
-                .verifyComplete();
+                .expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test
@@ -139,11 +139,11 @@ class MongoPresenceRepositoryAdapterIntegrationTest {
         adapter.connect("c-2", "alice", "pod-2", NOW).block();
         adapter.connect("c-3", "bob", "pod-1", NOW).block();
 
-        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+        StepVerifier.create(adapter.forget("alice")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(adapter.find("alice", NOW.minusSeconds(90)).block()).isEqualTo(new Presence("alice", false, null));
         assertThat(adapter.find("bob", NOW.minusSeconds(90)).block()).isEqualTo(new Presence("bob", true, NOW));
         assertThat(mongoTemplate.count(new Query(), PresenceConnectionEntity.class).block()).isEqualTo(1L);
-        StepVerifier.create(adapter.forget("alice")).verifyComplete();
+        StepVerifier.create(adapter.forget("alice")).expectComplete().verify(Duration.ofSeconds(10));
     }
 }
