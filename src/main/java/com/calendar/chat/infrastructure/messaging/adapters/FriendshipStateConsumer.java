@@ -2,6 +2,8 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.Friendship;
 import com.calendar.chat.domain.services.FriendshipService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.models.FriendshipStateDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -39,10 +41,14 @@ public class FriendshipStateConsumer {
 
     private final FriendshipService friendshipService;
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errors;
 
-    public FriendshipStateConsumer(FriendshipService friendshipService, ObjectMapper objectMapper) {
+    public FriendshipStateConsumer(FriendshipService friendshipService,
+                                   ObjectMapper objectMapper,
+                                   TechnicalErrorCounter errors) {
         this.friendshipService = friendshipService;
         this.objectMapper = objectMapper;
+        this.errors = errors;
     }
 
     @Bean
@@ -73,6 +79,7 @@ public class FriendshipStateConsumer {
                             return Mono.empty();
                         }))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.error("{} record unreadable, dropped: {}", TOPIC, error.getMessage());
                     return Mono.empty();
                 });
@@ -92,6 +99,7 @@ public class FriendshipStateConsumer {
                 })
                 .then()
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.warn("{} not applied, pair={}: {}", TOPIC, pairId, error.toString());
                     return Mono.empty();
                 });

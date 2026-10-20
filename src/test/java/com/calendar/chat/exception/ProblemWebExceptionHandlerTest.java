@@ -32,7 +32,7 @@ class ProblemWebExceptionHandlerTest {
 
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
     private final ProblemWebExceptionHandler handler = new ProblemWebExceptionHandler(
-            new GlobalErrorHandler(meterRegistry), new ProblemResponseWriter(ServerCodecConfigurer.create()));
+            new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry)), new ProblemResponseWriter(ServerCodecConfigurer.create()));
 
     private static MockServerWebExchange exchange() {
         return MockServerWebExchange.from(MockServerHttpRequest.get("/chat-service/x"));

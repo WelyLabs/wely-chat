@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.calls.scheduling;
 
 import com.calendar.chat.domain.services.CallService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
@@ -22,10 +24,12 @@ public class CallReaper implements SmartLifecycle {
     static final Duration PERIOD = Duration.ofSeconds(10);
 
     private final CallService callService;
+    private final TechnicalErrorCounter errors;
     private volatile Disposable loop;
 
-    public CallReaper(CallService callService) {
+    public CallReaper(CallService callService, TechnicalErrorCounter errors) {
         this.callService = callService;
+        this.errors = errors;
     }
 
     @Override
@@ -33,6 +37,7 @@ public class CallReaper implements SmartLifecycle {
         // Errors are caught inside the repeated Mono, or the first failure would stop the loop.
         loop = Mono.defer(callService::expire)
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_JOB);
                     log.warn("Call cleanup failed; next attempt in {}", PERIOD, error);
                     return Mono.empty();
                 })

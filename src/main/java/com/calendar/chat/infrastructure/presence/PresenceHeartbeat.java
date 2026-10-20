@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.presence;
 
 import com.calendar.chat.domain.services.PresenceService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
@@ -17,10 +19,12 @@ import reactor.core.publisher.Mono;
 public class PresenceHeartbeat implements SmartLifecycle {
 
     private final PresenceService presenceService;
+    private final TechnicalErrorCounter errors;
     private volatile Disposable loop;
 
-    public PresenceHeartbeat(PresenceService presenceService) {
+    public PresenceHeartbeat(PresenceService presenceService, TechnicalErrorCounter errors) {
         this.presenceService = presenceService;
+        this.errors = errors;
     }
 
     @Override
@@ -28,6 +32,7 @@ public class PresenceHeartbeat implements SmartLifecycle {
         // Errors are caught inside the repeated Mono, or the first failure would stop the loop.
         loop = Mono.defer(presenceService::heartbeat)
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_JOB);
                     log.warn("Presence heartbeat failed; next attempt in {}", PresenceService.HEARTBEAT, error);
                     return Mono.empty();
                 })

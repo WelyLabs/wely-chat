@@ -1,6 +1,9 @@
 package com.calendar.chat.infrastructure.presence;
 
 import com.calendar.chat.domain.services.LiveSessions;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -15,8 +18,16 @@ import static org.mockito.Mockito.when;
 
 class LiveSessionSweeperTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     private final LiveSessions liveSessions = mock(LiveSessions.class);
-    private final LiveSessionSweeper sweeper = new LiveSessionSweeper(liveSessions);
+    private final LiveSessionSweeper sweeper = new LiveSessionSweeper(liveSessions, new TechnicalErrorCounter(meterRegistry));
 
     @AfterEach
     void stop() {
@@ -51,5 +62,15 @@ class LiveSessionSweeperTest {
         sweeper.stop();
 
         assertThat(sweeper.isRunning()).isFalse();
+    }
+
+    @Test
+    void start_shouldCountAFailedSweep_asAJobFailure() {
+        when(liveSessions.closeDeleted()).thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        sweeper.start();
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_JOB) >= 1);
     }
 }

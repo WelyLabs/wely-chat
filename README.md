@@ -314,6 +314,39 @@ client peut tester et un `timestamp` :
 > les avalait toutes et **tout chemin inconnu répondait 500**. C'est le genre de défaut qu'un
 > test de route nominale ne voit jamais.
 
+### Erreurs RSocket
+
+Une route RSocket (`chat.send`, `chat.stream`, `call.events`) qui échoue répond toujours par une
+trame d'erreur `APPLICATION_ERROR`, mais ses données ne sont plus le seul texte du `detail` : c'est
+un **problème JSON**, avec les mêmes codes et les mêmes champs qu'une réponse HTTP, sans `instance`.
+
+```json
+{
+  "type": "https://welylabs.app/problems/cht-bus-011",
+  "title": "Account deleted",
+  "status": 410,
+  "detail": "This account has been deleted.",
+  "code": "CHT-BUS-011",
+  "timestamp": "2026-10-20T10:15:30.123Z",
+  "requestId": "3f2b8c1e-7d4a-4e9b-9a51-0c6e2f8d1b7a"
+}
+```
+
+- **Échec métier** (`CHT-BUS-*`) : son code et son statut, journalisé en WARN sans pile.
+- **Échec technique** (`CHT-TEC-*`) : son code, journalisé en ERROR avec la cause, compté dans
+  `wely_errors_technical_total{source="rsocket"}`.
+- **Tout le reste** : `CHT-TEC-000`, avec un `detail` générique qui ne laisse rien fuiter.
+- **`requestId`** : l'identifiant que le client envoie dans la métadonnée
+  `message/x.wely.request-id` (texte, 8 à 64 lettres, chiffres ou tirets), sinon un UUID généré et
+  cité dans la ligne de journal.
+
+**Changement de contrat** : wely-web et wely-ios lisent les données de la trame comme du JSON et
+retombent sur le texte brut si elles n'en sont pas (serveur plus ancien, erreur du transport). Un
+refus d'authentification est prononcé par l'intercepteur de sécurité avant toute route et garde
+son propre format. Implémentation : `RSocketErrorHandler`, un `@ControllerAdvice` dont le
+`@MessageExceptionHandler` voit aussi bien l'échec levé par la méthode de route que celui émis plus
+tard par son `Mono` ou son `Flux`.
+
 ---
 ## Configuration
 

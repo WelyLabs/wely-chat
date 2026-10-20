@@ -1,6 +1,9 @@
 package com.calendar.chat.infrastructure.presence;
 
 import com.calendar.chat.domain.services.PresenceService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
@@ -15,8 +18,16 @@ import static org.mockito.Mockito.when;
 
 class PresenceHeartbeatTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     private final PresenceService presenceService = mock(PresenceService.class);
-    private final PresenceHeartbeat heartbeat = new PresenceHeartbeat(presenceService);
+    private final PresenceHeartbeat heartbeat = new PresenceHeartbeat(presenceService, new TechnicalErrorCounter(meterRegistry));
 
     @AfterEach
     void stop() {
@@ -51,5 +62,15 @@ class PresenceHeartbeatTest {
         heartbeat.stop();
 
         assertThat(heartbeat.isRunning()).isFalse();
+    }
+
+    @Test
+    void start_shouldCountAFailedBeat_asAJobFailure() {
+        when(presenceService.heartbeat()).thenReturn(Mono.error(new IllegalStateException("mongo down")));
+
+        heartbeat.start();
+
+        await().atMost(Duration.ofSeconds(5))
+                .until(() -> technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_JOB) >= 1);
     }
 }

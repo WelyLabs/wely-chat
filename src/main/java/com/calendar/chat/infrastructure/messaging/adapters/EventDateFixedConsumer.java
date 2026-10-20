@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.models.EventDateFixedDTO;
 import com.calendar.chat.infrastructure.messaging.notices.DateFixedNoticeFormatter;
 import lombok.extern.slf4j.Slf4j;
@@ -38,12 +40,15 @@ public class EventDateFixedConsumer {
     private final ChatService chatService;
     private final DateFixedNoticeFormatter formatter;
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errors;
 
     public EventDateFixedConsumer(ChatService chatService, DateFixedNoticeFormatter formatter,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  TechnicalErrorCounter errors) {
         this.chatService = chatService;
         this.formatter = formatter;
         this.objectMapper = objectMapper;
+        this.errors = errors;
     }
 
     @Bean
@@ -54,6 +59,7 @@ public class EventDateFixedConsumer {
     private Mono<Void> apply(Message<byte[]> record) {
         return Mono.fromCallable(() -> objectMapper.readValue(record.getPayload(), EventDateFixedDTO.class))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.error("EVENT_DATE_FIXED record unreadable, dropped: {}", error.getMessage());
                     return Mono.empty();
                 })
@@ -70,6 +76,7 @@ public class EventDateFixedConsumer {
         return Mono.defer(() -> chatService.postSystemNotice(fixed.eventId(), noticeOf(fixed)))
                 .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.error("EVENT_DATE_FIXED dropped after {} attempts, eventId={}: {}",
                             MAX_ATTEMPTS, fixed.eventId(), error.getMessage(), error);
                     return Mono.empty();

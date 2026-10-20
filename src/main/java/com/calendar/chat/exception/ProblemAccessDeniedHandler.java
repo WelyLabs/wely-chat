@@ -31,7 +31,7 @@ public class ProblemAccessDeniedHandler implements ServerAccessDeniedHandler {
         BusinessErrorCode error = BusinessErrorCode.ACCESS_DENIED;
         // An authenticated caller reaching for what is not theirs is worth a look: WARN.
         log.warn("Access failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
-                exchange.getRequest().getId());
+                RequestIds.of(exchange));
 
         return headers.handle(ProblemAuthenticationEntryPoint.headersOnly(exchange), denied)
                 .then(Mono.defer(() -> writer.write(exchange, ProblemDetails.of(error, exchange))));

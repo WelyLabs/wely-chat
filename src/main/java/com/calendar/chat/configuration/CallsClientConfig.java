@@ -39,6 +39,7 @@ public class CallsClientConfig {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) TIMEOUT.toMillis())
                 .responseTimeout(TIMEOUT);
+        // External: no RequestIdExchangeFilter, Cloudflare is not told our request ids.
         return WebClient.builder()
                 .baseUrl(url)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, BEARER + secret)

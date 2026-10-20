@@ -2,7 +2,10 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.ChatService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.notices.DateFixedNoticeFormatter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,8 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
-import reactor.test.StepVerifier;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -37,6 +40,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EventDateFixedConsumerTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     private static final String SAME_DAY = "📅 Date fixée : jeudi 15 octobre, 19:00 – 21:00";
 
     @Mock
@@ -47,7 +58,7 @@ class EventDateFixedConsumerTest {
     @BeforeEach
     void setUp() {
         consumer = new EventDateFixedConsumer(chatService, new DateFixedNoticeFormatter(ZoneId.of("Europe/Paris")),
-                JsonMapper.builder().build());
+                JsonMapper.builder().build(), new TechnicalErrorCounter(meterRegistry));
     }
 
     private static org.springframework.messaging.Message<byte[]> record(String json) {
@@ -126,6 +137,8 @@ class EventDateFixedConsumerTest {
 
         verify(chatService, timeout(2000)).postSystemNotice("e2", SAME_DAY);
         verify(chatService, never()).postSystemNotice(eq("e1"), any());
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(2);
     }
 
     @Test
@@ -145,6 +158,8 @@ class EventDateFixedConsumerTest {
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(chatService, timeout(20_000)).postSystemNotice("e2", SAME_DAY);
         assertThat(attempts.get()).isEqualTo(4);
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test

@@ -2,9 +2,12 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.Friendship;
 import com.calendar.chat.domain.services.FriendshipService;
+import com.calendar.chat.exception.GlobalErrorHandler;
 import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.messaging.models.FriendshipStateDTO;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +38,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class FriendshipStateConsumerTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     private static final String ALICE = "11111111-0000-4000-8000-000000000001";
     private static final String BOB = "22222222-0000-4000-8000-000000000002";
     private static final String KEY = ALICE + ":" + BOB;
@@ -46,7 +57,7 @@ class FriendshipStateConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new FriendshipStateConsumer(friendshipService, JsonMapper.builder().build());
+        consumer = new FriendshipStateConsumer(friendshipService, JsonMapper.builder().build(), new TechnicalErrorCounter(meterRegistry));
     }
 
     private static Message<byte[]> value(String key, String json) {
@@ -105,6 +116,9 @@ class FriendshipStateConsumerTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(friendshipService);
+
+        // A record that breaks the contract is refused, not an incident of ours: nothing counted.
+        assertThat(meterRegistry.getMeters()).isEmpty();
     }
 
     @Test
@@ -116,6 +130,8 @@ class FriendshipStateConsumerTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(friendshipService).applyState(new Friendship(ALICE, BOB, 2));
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test
@@ -144,6 +160,8 @@ class FriendshipStateConsumerTest {
                 .verifyComplete();
 
         verify(friendshipService).applyTombstone(ALICE, BOB);
+
+        assertThat(technicalErrors("CHT-TEC-004", GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test

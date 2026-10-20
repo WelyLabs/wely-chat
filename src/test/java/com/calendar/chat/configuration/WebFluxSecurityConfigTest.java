@@ -157,7 +157,7 @@ class WebFluxSecurityConfigTest {
                 .expectStatus().isOk()
                 .expectBody(String.class)
                 .value(metrics -> assertThat(metrics)
-                        .contains("wely_errors_technical_total{code=\"CHT-TEC-004\"}"));
+                        .contains("wely_errors_technical_total{code=\"CHT-TEC-004\",source=\"http\"}"));
     }
 
     @Test

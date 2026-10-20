@@ -1,6 +1,5 @@
 package com.calendar.chat.exception;
 
-import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -31,8 +30,9 @@ import java.util.Map;
  * without {@code code} or {@code requestId}.
  *
  * <p>Technical failures, and failures nothing expected, are counted in
- * {@value #TECHNICAL_ERRORS_METRIC} tagged by {@code code}: a dependency going down shows on a
- * dashboard before anyone reads a log.
+ * {@value #TECHNICAL_ERRORS_METRIC} tagged by {@code code} and {@code source} (here {@value #SOURCE_HTTP}),
+ * through {@link TechnicalErrorCounter}: a dependency going down shows on a dashboard before anyone
+ * reads a log.
  */
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -57,10 +57,31 @@ public class GlobalErrorHandler {
 
     public static final String CODE_TAG = "code";
 
-    private final MeterRegistry meterRegistry;
+    /** Where a technical failure surfaced; see {@link TechnicalErrorCounter}. */
+    public static final String SOURCE_TAG = "source";
 
-    public GlobalErrorHandler(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
+    /** Answered to an HTTP request: the advice, the WebExceptionHandler, the security writers. */
+    public static final String SOURCE_HTTP = "http";
+
+    /** Raised while consuming a Kafka record. */
+    public static final String SOURCE_KAFKA = "kafka";
+
+    /** Raised by an outbox relay or dispatcher. This service has none; kept for one vocabulary across services. */
+    public static final String SOURCE_OUTBOX = "outbox";
+
+    /** Raised by the deleted-users reconciliation loop. */
+    public static final String SOURCE_RECONCILIATION = "reconciliation";
+
+    /** Raised by a scheduled job: call reaper, presence heartbeat, stream sweep. */
+    public static final String SOURCE_JOB = "job";
+
+    /** Answered to an RSocket route, as an error frame. */
+    public static final String SOURCE_RSOCKET = "rsocket";
+
+    private final TechnicalErrorCounter counter;
+
+    public GlobalErrorHandler(TechnicalErrorCounter counter) {
+        this.counter = counter;
     }
 
     /**
@@ -84,7 +105,7 @@ public class GlobalErrorHandler {
 
         // Expected outcome, not an incident: logged at WARN, and without a stack trace.
         log.warn("Business failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
-                exchange.getRequest().getId());
+                RequestIds.of(exchange));
 
         return ProblemDetails.of(error, exchange);
     }
@@ -96,8 +117,8 @@ public class GlobalErrorHandler {
         // A dependency is down: ERROR with the cause, because someone has to act on it.
         // The previous version logged these at WARN, as business failures, which hid them.
         log.error("Technical failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
-                exchange.getRequest().getId(), ex);
-        countTechnicalError(error.getCode());
+                RequestIds.of(exchange), ex);
+        counter.count(ex, SOURCE_HTTP);
 
         return ProblemDetails.of(error.getHttpStatus(), error.getCode(), error.getTitle(), error.getDetail(),
                 exchange);
@@ -113,7 +134,7 @@ public class GlobalErrorHandler {
 
         // The caller's mistake, like a business failure: WARN, without a stack trace.
         log.warn("Validation failure {} on {} (request {})", VALIDATION_FAILED_CODE,
-                exchange.getRequest().getPath(), exchange.getRequest().getId());
+                exchange.getRequest().getPath(), RequestIds.of(exchange));
 
         ProblemDetail problem = ProblemDetails.of(HttpStatus.BAD_REQUEST, VALIDATION_FAILED_CODE,
                 "Invalid request", "One or more fields are invalid.", exchange);
@@ -136,7 +157,7 @@ public class GlobalErrorHandler {
                                                        ServerWebExchange exchange) {
         HttpStatusCode status = ex.getStatusCode();
         String reason = status instanceof HttpStatus known ? known.getReasonPhrase() : "Request refused";
-        log.debug("{} on {} (request {})", status, exchange.getRequest().getPath(), exchange.getRequest().getId());
+        log.debug("{} on {} (request {})", status, exchange.getRequest().getPath(), RequestIds.of(exchange));
 
         return ProblemDetails.of(status, REQUEST_REFUSED_CODE, reason,
                 "The request could not be served as sent.", exchange);
@@ -154,14 +175,11 @@ public class GlobalErrorHandler {
 
     private ProblemDetail unexpected(Throwable failure, ServerWebExchange exchange) {
         log.error("Unhandled failure on {} (request {})", exchange.getRequest().getPath(),
-                exchange.getRequest().getId(), failure);
-        countTechnicalError(UNEXPECTED_FAILURE_CODE);
+                RequestIds.of(exchange), failure);
+        counter.count(failure, SOURCE_HTTP);
 
         return ProblemDetails.of(HttpStatus.INTERNAL_SERVER_ERROR, UNEXPECTED_FAILURE_CODE,
                 "Unexpected error", "The request could not be completed.", exchange);
     }
 
-    private void countTechnicalError(String code) {
-        meterRegistry.counter(TECHNICAL_ERRORS_METRIC, CODE_TAG, code).increment();
-    }
 }

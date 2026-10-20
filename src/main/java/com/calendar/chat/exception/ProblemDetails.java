@@ -13,9 +13,9 @@ import java.time.Instant;
  * through {@link #of}, so a client reads the same shape whichever layer refused the request.
  *
  * <p>Three properties are added beyond the standard fields: {@code code}, the stable
- * identifier a client branches on, {@code timestamp}, and {@code requestId} — the WebFlux
- * request id that also prefixes the framework's log lines, so a response leads straight to
- * the logs of the request that produced it.
+ * identifier a client branches on, {@code timestamp}, and {@code requestId} — see
+ * {@link RequestIds#of}: the id the gateway issued, quoted in every log line of the request, so a
+ * response leads straight to the logs that produced it.
  */
 public final class ProblemDetails {
 
@@ -32,14 +32,19 @@ public final class ProblemDetails {
     public static ProblemDetail of(HttpStatusCode status, String code, String title, String detail,
                                    ServerWebExchange exchange) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setType(URI.create(PROBLEM_TYPE_BASE + code.toLowerCase()));
+        problem.setType(typeOf(code));
         problem.setTitle(title);
         problem.setInstance(URI.create(exchange.getRequest().getPath().value()));
         problem.setProperty(CODE_PROPERTY, code);
         problem.setProperty(TIMESTAMP_PROPERTY, Instant.now().toString());
-        problem.setProperty(REQUEST_ID_PROPERTY, exchange.getRequest().getId());
+        problem.setProperty(REQUEST_ID_PROPERTY, RequestIds.of(exchange));
 
         return problem;
+    }
+
+    /** The {@code type} URI of a code: an identifier, not dereferenced. */
+    public static URI typeOf(String code) {
+        return URI.create(PROBLEM_TYPE_BASE + code.toLowerCase());
     }
 
     public static ProblemDetail of(BusinessErrorCode error, ServerWebExchange exchange) {

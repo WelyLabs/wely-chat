@@ -27,6 +27,8 @@ public class MediaApiClientConfig {
                 .baseUrl(mediaApiUrl)
                 .defaultHeader(SECRET_HEADER, secret)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
+                // A Wely service: it receives the request id, so its logs line up with ours.
+                .filter(new RequestIdExchangeFilter())
                 .build();
     }
 }

@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.models.MessageBroadcastDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -41,10 +43,14 @@ public class MessageBroadcastConsumer {
 
     private final KafkaMessageBroadcaster broadcaster;
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errors;
 
-    public MessageBroadcastConsumer(KafkaMessageBroadcaster broadcaster, ObjectMapper objectMapper) {
+    public MessageBroadcastConsumer(KafkaMessageBroadcaster broadcaster,
+                                    ObjectMapper objectMapper,
+                                    TechnicalErrorCounter errors) {
         this.broadcaster = broadcaster;
         this.objectMapper = objectMapper;
+        this.errors = errors;
     }
 
     @Bean
@@ -56,6 +62,7 @@ public class MessageBroadcastConsumer {
         return Mono.<Void>fromRunnable(() -> broadcaster.accept(
                         objectMapper.readValue(record.getPayload(), MessageBroadcastDTO.class)))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     // The payload is not logged: it is someone's private message.
                     log.error("Dropped one broadcast record: {}", error.getMessage());
                     return Mono.empty();

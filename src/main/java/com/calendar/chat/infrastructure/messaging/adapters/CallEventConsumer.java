@@ -1,5 +1,7 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.models.CallEventBroadcastDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,10 +27,14 @@ public class CallEventConsumer {
 
     private final KafkaCallBroadcaster broadcaster;
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errors;
 
-    public CallEventConsumer(KafkaCallBroadcaster broadcaster, ObjectMapper objectMapper) {
+    public CallEventConsumer(KafkaCallBroadcaster broadcaster,
+                             ObjectMapper objectMapper,
+                             TechnicalErrorCounter errors) {
         this.broadcaster = broadcaster;
         this.objectMapper = objectMapper;
+        this.errors = errors;
     }
 
     @Bean
@@ -40,6 +46,7 @@ public class CallEventConsumer {
         return Mono.<Void>fromRunnable(() -> broadcaster.accept(
                         objectMapper.readValue(record.getPayload(), CallEventBroadcastDTO.class)))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.error("Dropped one call event record: {}", error.getMessage());
                     return Mono.empty();
                 });

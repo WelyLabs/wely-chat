@@ -2,6 +2,8 @@ package com.calendar.chat.infrastructure.reconciliation;
 
 import com.calendar.chat.domain.services.AccountReconciliationService;
 import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.exception.TechnicalException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +26,7 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
     private final Duration initialDelay;
     private final Duration interval;
     private final Duration retryInterval;
+    private final TechnicalErrorCounter errors;
 
     private volatile Disposable loop;
 
@@ -31,11 +34,13 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
             AccountReconciliationService reconciliation,
             @Value("${app.account-erasure.reconciliation.initial-delay:1m}") Duration initialDelay,
             @Value("${app.account-erasure.reconciliation.interval:24h}") Duration interval,
-            @Value("${app.account-erasure.reconciliation.retry-interval:1h}") Duration retryInterval) {
+            @Value("${app.account-erasure.reconciliation.retry-interval:1h}") Duration retryInterval,
+                                          TechnicalErrorCounter errors) {
         this.reconciliation = reconciliation;
         this.initialDelay = initialDelay;
         this.interval = interval;
         this.retryInterval = retryInterval;
+        this.errors = errors;
     }
 
     @Override
@@ -80,6 +85,7 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
                 })
                 .switchIfEmpty(Mono.error(() -> new IllegalStateException("Reconciliation pass completed empty")))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_RECONCILIATION);
                     if (error instanceof TechnicalException technical) {
                         log.warn("Deleted-users reconciliation failed; next pass in {}: {} {}", retryInterval,
                                 technical.getErrorCode().getCode(), technical.getMessage());

@@ -4,8 +4,11 @@ import com.calendar.chat.domain.models.ReconciliationReport;
 import com.calendar.chat.domain.services.AccountReconciliationService;
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.GlobalErrorHandler;
 import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.exception.TechnicalException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +25,14 @@ import static org.mockito.Mockito.when;
 
 /** Lifecycle cases run on real time with millisecond delays; the delay choice is checked on passOnce directly. */
 class DeletedUsersReconciliationLoopTest {
+
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
 
     private static final Duration FAST = Duration.ofMillis(10);
     private static final Duration NEVER = Duration.ofHours(1);
@@ -43,7 +54,7 @@ class DeletedUsersReconciliationLoopTest {
     }
 
     private DeletedUsersReconciliationLoop loop(Duration initialDelay, Duration interval, Duration retryInterval) {
-        loop = new DeletedUsersReconciliationLoop(reconciliation, initialDelay, interval, retryInterval);
+        loop = new DeletedUsersReconciliationLoop(reconciliation, initialDelay, interval, retryInterval, new TechnicalErrorCounter(meterRegistry));
         return loop;
     }
 
@@ -141,6 +152,8 @@ class DeletedUsersReconciliationLoopTest {
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
                 .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(technicalErrors("CHT-TEC-003", GlobalErrorHandler.SOURCE_RECONCILIATION)).isEqualTo(1);
     }
 
     @Test
@@ -150,6 +163,8 @@ class DeletedUsersReconciliationLoopTest {
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
                 .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(meterRegistry.getMeters()).isEmpty();
     }
 
     @Test
@@ -168,6 +183,8 @@ class DeletedUsersReconciliationLoopTest {
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)
                 .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_RECONCILIATION)).isEqualTo(1);
     }
 
     @Test

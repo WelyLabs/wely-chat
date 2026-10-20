@@ -1,9 +1,19 @@
 package com.calendar.chat.configuration;
 
+import com.calendar.chat.application.rest.ConversationController;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import com.calendar.chat.application.rest.ConversationController;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
+import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.http.codec.multipart.DefaultPartHttpMessageReader;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.HandlerTypePredicate;
 import org.springframework.web.reactive.config.PathMatchConfigurer;
@@ -55,4 +65,34 @@ class WebConfigTest {
     private static class ForeignController { }
 
     private static class PlainClass { }
+
+    /** Boot's WebFlux auto-configuration, which {@code @EnableWebFlux} used to switch off, in the real application. */
+    @Nested
+    @SpringBootTest
+    @ActiveProfiles("test")
+    class InTheApplication {
+
+        @MockitoBean
+        private ReactiveJwtDecoder jwtDecoder;
+
+        @Autowired
+        private ServerCodecConfigurer codecs;
+
+        @Autowired
+        private Environment environment;
+
+        @Test
+        @DisplayName("spring.webflux.multipart.max-in-memory-size reaches the multipart reader: a photo stays in memory")
+        void codecs_shouldApplyTheMultipartInMemoryLimit() {
+            long configured = DataSize.parse(environment.getRequiredProperty("spring.webflux.multipart.max-in-memory-size"))
+                    .toBytes();
+
+            assertThat(configured).isEqualTo(DataSize.ofMegabytes(11).toBytes());
+            assertThat(codecs.getReaders())
+                    .filteredOn(DefaultPartHttpMessageReader.class::isInstance)
+                    .singleElement()
+                    .satisfies(reader -> assertThat(((DefaultPartHttpMessageReader) reader).getMaxInMemorySize())
+                            .isEqualTo(configured));
+        }
+    }
 }

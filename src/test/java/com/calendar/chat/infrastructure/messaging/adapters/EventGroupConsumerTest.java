@@ -2,8 +2,11 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.services.EventGroupService;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.infrastructure.messaging.mappers.EventGroupMapper;
 import com.calendar.chat.infrastructure.messaging.models.EventGroupChangedDTO;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,8 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import reactor.core.publisher.Flux;
-import reactor.test.StepVerifier;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -33,6 +36,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class EventGroupConsumerTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     @Mock
     private EventGroupService eventGroupService;
 
@@ -41,7 +52,7 @@ class EventGroupConsumerTest {
     @BeforeEach
     void setUp() {
         consumer = new EventGroupConsumer(eventGroupService, Mappers.getMapper(EventGroupMapper.class),
-                JsonMapper.builder().build());
+                JsonMapper.builder().build(), new TechnicalErrorCounter(meterRegistry));
     }
 
     private static Message<byte[]> record(String eventId) {
@@ -80,6 +91,8 @@ class EventGroupConsumerTest {
         // One attempt plus three retries with backoff from 1s, then the next record.
         verify(eventGroupService, timeout(20_000)).apply(next);
         assertThat(attempts.get()).isEqualTo(4);
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test
@@ -90,6 +103,8 @@ class EventGroupConsumerTest {
         StepVerifier.create(consumer.eventGroup().apply(Flux.just(raw("not json"), record("e2")))).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(eventGroupService).apply(new EventGroup("e2", "t", "a", List.of("a"), 1));
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.calendar.chat.infrastructure.presence;
 
 import com.calendar.chat.domain.services.LiveSessions;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
@@ -13,10 +15,12 @@ import reactor.core.publisher.Mono;
 public class LiveSessionSweeper implements SmartLifecycle {
 
     private final LiveSessions liveSessions;
+    private final TechnicalErrorCounter errors;
     private volatile Disposable loop;
 
-    public LiveSessionSweeper(LiveSessions liveSessions) {
+    public LiveSessionSweeper(LiveSessions liveSessions, TechnicalErrorCounter errors) {
         this.liveSessions = liveSessions;
+        this.errors = errors;
     }
 
     @Override
@@ -24,6 +28,7 @@ public class LiveSessionSweeper implements SmartLifecycle {
         // Errors are caught inside the repeated Mono, or the first failure would stop the loop.
         loop = Mono.defer(liveSessions::closeDeleted)
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_JOB);
                     log.warn("Stream sweep failed; next attempt in {}", LiveSessions.SWEEP_PERIOD, error);
                     return Mono.empty();
                 })

@@ -6,8 +6,11 @@ import ch.qos.logback.core.read.ListAppender;
 import com.calendar.chat.domain.services.AccountErasureService;
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.GlobalErrorHandler;
 import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.exception.TechnicalException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,6 +43,14 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class UserDeletedConsumerTest {
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    private double technicalErrors(String code, String source) {
+        var counter = meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC)
+                .tags(GlobalErrorHandler.CODE_TAG, code, GlobalErrorHandler.SOURCE_TAG, source).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
     private static final String USER = "89a380b8-0000-4000-8000-000000000001";
     private static final String OTHER = "89a380b8-0000-4000-8000-000000000002";
     private static final Instant DELETED_AT = Instant.parse("2026-10-15T14:03:27.123Z");
@@ -52,7 +63,7 @@ class UserDeletedConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new UserDeletedConsumer(erasure, JsonMapper.builder().build());
+        consumer = new UserDeletedConsumer(erasure, JsonMapper.builder().build(), new TechnicalErrorCounter(meterRegistry));
         logs.start();
         consumerLogger().addAppender(logs);
     }
@@ -115,6 +126,8 @@ class UserDeletedConsumerTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verify(erasure, times(1)).erase(anyString(), any());
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test
@@ -161,6 +174,8 @@ class UserDeletedConsumerTest {
                 .singleElement().asString()
                 .contains(USER, "CHT-TEC-004")
                 .doesNotContain("Retries exhausted");
+
+        assertThat(technicalErrors("CHT-TEC-004", GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test
@@ -174,6 +189,9 @@ class UserDeletedConsumerTest {
         assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
                 .singleElement().asString()
                 .contains(USER, "CHT-BUS-011");
+
+        // A refused erasure is not an incident: logged, never counted.
+        assertThat(meterRegistry.getMeters()).isEmpty();
     }
 
     @Test
@@ -187,6 +205,8 @@ class UserDeletedConsumerTest {
         assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
                 .singleElement().asString()
                 .contains("java.lang.IllegalStateException: relay down");
+
+        assertThat(technicalErrors(GlobalErrorHandler.UNEXPECTED_FAILURE_CODE, GlobalErrorHandler.SOURCE_KAFKA)).isEqualTo(1);
     }
 
     @Test

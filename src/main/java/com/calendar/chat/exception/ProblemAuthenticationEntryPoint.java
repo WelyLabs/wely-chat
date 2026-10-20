@@ -34,7 +34,7 @@ public class ProblemAuthenticationEntryPoint implements ServerAuthenticationEntr
         BusinessErrorCode error = BusinessErrorCode.AUTHENTICATION_REQUIRED;
         // An expired token is routine traffic, not an incident: DEBUG, without a stack trace.
         log.debug("Authentication failure {} on {} (request {})", error.getCode(), exchange.getRequest().getPath(),
-                exchange.getRequest().getId());
+                RequestIds.of(exchange));
 
         return headers.commence(headersOnly(exchange), failure)
                 .then(Mono.defer(() -> writer.write(exchange, ProblemDetails.of(error, exchange))));

@@ -2,6 +2,8 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.services.AccountErasureService;
 import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.GlobalErrorHandler;
+import com.calendar.chat.exception.TechnicalErrorCounter;
 import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.messaging.models.UserDeletedEventDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -29,10 +31,12 @@ public class UserDeletedConsumer {
 
     private final AccountErasureService erasure;
     private final ObjectMapper objectMapper;
+    private final TechnicalErrorCounter errors;
 
-    public UserDeletedConsumer(AccountErasureService erasure, ObjectMapper objectMapper) {
+    public UserDeletedConsumer(AccountErasureService erasure, ObjectMapper objectMapper, TechnicalErrorCounter errors) {
         this.erasure = erasure;
         this.objectMapper = objectMapper;
+        this.errors = errors;
     }
 
     @Bean
@@ -44,6 +48,7 @@ public class UserDeletedConsumer {
     private Mono<Void> apply(Message<byte[]> record) {
         return Mono.fromCallable(() -> objectMapper.readValue(record.getPayload(), UserDeletedEventDTO.class))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.error("USER_DELETED record unreadable, skipped: {}", error.getMessage());
                     return Mono.empty();
                 })
@@ -60,6 +65,7 @@ public class UserDeletedConsumer {
                 .retryWhen(Retry.backoff(MAX_ATTEMPTS, FIRST_BACKOFF).maxBackoff(MAX_BACKOFF)
                         .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                 .onErrorResume(error -> {
+                    errors.count(error, GlobalErrorHandler.SOURCE_KAFKA);
                     log.warn("USER_DELETED not applied, userId={}, reconciliation will retry: {}",
                             deleted.userId(), reason(error));
                     return Mono.empty();

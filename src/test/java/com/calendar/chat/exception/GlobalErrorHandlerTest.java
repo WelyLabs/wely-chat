@@ -102,7 +102,7 @@ class GlobalErrorHandlerTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         client = WebTestClient.bindToController(new TestController())
-                .controllerAdvice(new GlobalErrorHandler(meterRegistry))
+                .controllerAdvice(new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry)))
                 .build();
     }
 
@@ -270,6 +270,9 @@ class GlobalErrorHandlerTest {
 
         assertThat(technicalErrors("CHT-TEC-004")).isEqualTo(2);
         assertThat(technicalErrors("CHT-TEC-002")).isEqualTo(1);
+        assertThat(meterRegistry.find(GlobalErrorHandler.TECHNICAL_ERRORS_METRIC).counters())
+                .allSatisfy(counter -> assertThat(counter.getId().getTag(GlobalErrorHandler.SOURCE_TAG))
+                        .isEqualTo(GlobalErrorHandler.SOURCE_HTTP));
     }
 
     @Test
@@ -296,7 +299,7 @@ class GlobalErrorHandlerTest {
     @Test
     @DisplayName("handle maps each kind of failure exactly as the matching @ExceptionHandler does")
     void handle_shouldMapEachFailure_likeItsExceptionHandler() {
-        GlobalErrorHandler handler = new GlobalErrorHandler(meterRegistry);
+        GlobalErrorHandler handler = new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry));
 
         assertThat(handler.handle(new BusinessException(BusinessErrorCode.CALL_FULL), exchange()).getProperties())
                 .containsEntry(ProblemDetails.CODE_PROPERTY, "CHT-BUS-009");
@@ -314,7 +317,7 @@ class GlobalErrorHandlerTest {
     @Test
     @DisplayName("an Error, not an Exception, is still answered and counted as unexpected")
     void handle_shouldAnswerAnError_asUnexpected() {
-        ProblemDetail problem = new GlobalErrorHandler(meterRegistry).handle(new AssertionError("boom"), exchange());
+        ProblemDetail problem = new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry)).handle(new AssertionError("boom"), exchange());
 
         assertThat(problem.getStatus()).isEqualTo(500);
         assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE_PROPERTY,
@@ -328,7 +331,7 @@ class GlobalErrorHandlerTest {
         result.addError(new FieldError("request", "content", "must not be blank"));
         MethodParameter parameter = new MethodParameter(TestController.class.getDeclaredMethod("invalid"), -1);
 
-        ProblemDetail problem = new GlobalErrorHandler(meterRegistry)
+        ProblemDetail problem = new GlobalErrorHandler(new TechnicalErrorCounter(meterRegistry))
                 .handle(new WebExchangeBindException(parameter, result), exchange());
 
         assertThat(problem.getProperties()).containsEntry(ProblemDetails.CODE_PROPERTY,
@@ -377,9 +380,39 @@ class GlobalErrorHandlerTest {
         }
 
         @Test
-        @DisplayName("Boot's ProblemDetailsExceptionHandler is not registered: @EnableWebFlux turns its auto-configuration off")
+        @DisplayName("Boot's ProblemDetailsExceptionHandler is not registered: spring.webflux.problemdetails.enabled stays unset")
         void context_shouldHoldNoFrameworkProblemAdvice() {
             assertThat(context.getBeansOfType(ResponseEntityExceptionHandler.class)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the gateway's X-Request-Id is the problem's requestId, and echoed on the response")
+        void problem_shouldQuoteTheGatewaysRequestId() {
+            String gatewayId = "abcd1234-0000-4000-8000-000000000001";
+
+            server().get().uri("/chat-service/no-such-path")
+                    .header(RequestIds.REQUEST_ID_HEADER, gatewayId)
+                    .exchange()
+                    .expectStatus().isNotFound()
+                    .expectHeader().valueEquals(RequestIds.REQUEST_ID_HEADER, gatewayId)
+                    .expectBody()
+                    .jsonPath("$.requestId").isEqualTo(gatewayId);
+        }
+
+        @Test
+        @DisplayName("a refusal by the security chain quotes it too: the id is adopted before authentication")
+        void authenticationRefusal_shouldQuoteTheGatewaysRequestId() {
+            String gatewayId = "abcd1234-0000-4000-8000-000000000002";
+
+            WebTestClient.bindToServer().baseUrl("http://localhost:" + port)
+                    .responseTimeout(Duration.ofSeconds(30)).build()
+                    .get().uri("/chat-service/conversations/all")
+                    .header(RequestIds.REQUEST_ID_HEADER, gatewayId)
+                    .exchange()
+                    .expectStatus().isUnauthorized()
+                    .expectBody()
+                    .jsonPath("$.code").isEqualTo(BusinessErrorCode.AUTHENTICATION_REQUIRED.getCode())
+                    .jsonPath("$.requestId").isEqualTo(gatewayId);
         }
 
         @Test

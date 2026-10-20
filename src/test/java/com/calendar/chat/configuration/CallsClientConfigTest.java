@@ -1,5 +1,7 @@
 package com.calendar.chat.configuration;
 
+import com.calendar.chat.exception.RequestIds;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -8,6 +10,7 @@ import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,5 +50,30 @@ class CallsClientConfigTest {
         call(capturing(new CallsClientConfig().turnWebClient("https://rtc.example/v1", "turn-token")));
 
         assertThat(sent.getFirst().headers().getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Bearer turn-token");
+    }
+
+    @Test
+    @DisplayName("Cloudflare is external: our request id is never sent there")
+    void realtimeWebClient_shouldNotForwardTheRequestId() {
+        WebClient client = capturing(new CallsClientConfig().realtimeWebClient("https://rtc.example/v1", "app-secret"));
+
+        StepVerifier.create(client.post().uri("/apps/a/sessions/new").retrieve().toBodilessEntity()
+                        .contextWrite(Context.of(RequestIds.REQUEST_ID_ATTRIBUTE, "abcd1234-ef56")))
+                .expectNextCount(1)
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(sent.getFirst().headers().containsHeader(RequestIds.REQUEST_ID_HEADER)).isFalse();
+    }
+
+    @Test
+    void turnWebClient_shouldNotForwardTheRequestId() {
+        WebClient client = capturing(new CallsClientConfig().turnWebClient("https://rtc.example/v1", "turn-token"));
+
+        StepVerifier.create(client.post().uri("/apps/a/sessions/new").retrieve().toBodilessEntity()
+                        .contextWrite(Context.of(RequestIds.REQUEST_ID_ATTRIBUTE, "abcd1234-ef56")))
+                .expectNextCount(1)
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(sent.getFirst().headers().containsHeader(RequestIds.REQUEST_ID_HEADER)).isFalse();
     }
 }
