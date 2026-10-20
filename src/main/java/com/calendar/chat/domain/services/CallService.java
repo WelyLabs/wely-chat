@@ -17,6 +17,7 @@ import com.calendar.chat.domain.models.TrackRequest;
 import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
@@ -62,11 +63,13 @@ public class CallService {
     private final CallNoticeFormatter noticeFormatter;
     private final AccountGuard guard;
     private final int maxParticipants;
+    private final ChatActivity activity;
     private final Clock clock;
 
     public CallService(CallRepository callRepository, ChatRepository chatRepository, MediaRelay mediaRelay,
                        IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster, ChatService chatService,
-                       CallNoticeFormatter noticeFormatter, AccountGuard guard, int maxParticipants, Clock clock) {
+                       CallNoticeFormatter noticeFormatter, AccountGuard guard, int maxParticipants,
+                       ChatActivity activity, Clock clock) {
         this.callRepository = callRepository;
         this.chatRepository = chatRepository;
         this.mediaRelay = mediaRelay;
@@ -76,6 +79,7 @@ public class CallService {
         this.noticeFormatter = noticeFormatter;
         this.guard = guard;
         this.maxParticipants = maxParticipants;
+        this.activity = activity;
         this.clock = clock;
     }
 
@@ -94,9 +98,14 @@ public class CallService {
                         .switchIfEmpty(Mono.defer(() -> callRepository
                                 .createOrGetLive(Call.ringing(conversationId, userId, userName, media, clock.instant(),
                                         conversation.getParticipantIds()))
-                                .flatMap(call -> startedBy(call, userId)
-                                        ? notify(call, CallEventType.RINGING, userId, call.memberIdsExcept(userId))
-                                        : Mono.just(call)))));
+                                .flatMap(call -> {
+                                    if (!startedBy(call, userId)) {
+                                        return Mono.just(call);
+                                    }
+                                    // Created by this caller, not found already live after a race: a new call.
+                                    activity.callStarted();
+                                    return notify(call, CallEventType.RINGING, userId, call.memberIdsExcept(userId));
+                                }))));
     }
 
     /** The live call of a conversation the caller belongs to; empty when there is none. */
@@ -281,7 +290,14 @@ public class CallService {
      * if it had already ended, so a call ends once even when two instances race to end it.
      */
     Mono<Call> end(Call call, CallStatus status, String actorId) {
-        return callRepository.end(call.id(), status, clock.instant())
+        Instant endedAt = clock.instant();
+        return callRepository.end(call.id(), status, endedAt)
+                // Empty when another instance ended it first: one call, one duration.
+                .doOnNext(ended -> {
+                    if (ended.status() == CallStatus.ENDED) {
+                        activity.callEnded(Duration.between(ended.startedAt(), endedAt));
+                    }
+                })
                 .flatMap(ended -> notify(ended, CallEventType.ENDED, actorId, ended.memberIds()))
                 .flatMap(ended -> chatService
                         .postConversationNotice(ended.conversationId(), "call:" + ended.id(),

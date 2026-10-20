@@ -13,6 +13,7 @@ import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.IceServer;
 import com.calendar.chat.domain.models.LayerChoice;
 import com.calendar.chat.domain.models.LocalTrack;
+import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.RelaySubscription;
 import com.calendar.chat.domain.models.RemoteTrack;
 import com.calendar.chat.domain.models.SessionDescription;
@@ -20,12 +21,12 @@ import com.calendar.chat.domain.models.TrackRequest;
 import com.calendar.chat.domain.models.VideoLayer;
 import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
-import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
+import com.calendar.chat.domain.ports.RecordingChatActivity;
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.BusinessException;
 import com.calendar.chat.exception.TechnicalErrorCode;
@@ -88,11 +89,12 @@ class CallServiceTest {
     private DeletedUserMarkers markers;
 
     private CallService service;
+    private final RecordingChatActivity activity = new RecordingChatActivity();
 
     @BeforeEach
     void setUp() {
         service = new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
-                chatService, noticeFormatter, new AccountGuard(markers), MAX_PARTICIPANTS,
+                chatService, noticeFormatter, new AccountGuard(markers), MAX_PARTICIPANTS, activity,
                 Clock.fixed(NOW, ZoneOffset.UTC));
         lenient().when(markers.isDeleted(anyString())).thenReturn(Mono.just(false));
         lenient().when(callBroadcaster.broadcast(any())).thenReturn(Mono.empty());
@@ -147,6 +149,8 @@ class CallServiceTest {
                 .containsExactly(
                         tuple(CallEventType.RINGING, "bob", "alice"),
                         tuple(CallEventType.RINGING, "carol", "alice"));
+
+        assertThat(activity.callsStarted).isEqualTo(1);
     }
 
     @Test
@@ -175,6 +179,8 @@ class CallServiceTest {
 
         verify(callRepository, never()).createOrGetLive(any());
         verifyNoInteractions(callBroadcaster);
+
+        assertThat(activity.callsStarted).isZero();
     }
 
     @Test
@@ -188,6 +194,8 @@ class CallServiceTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(callBroadcaster);
+
+        assertThat(activity.callsStarted).isZero();
     }
 
     @Test
@@ -199,6 +207,8 @@ class CallServiceTest {
                         .isEqualTo(BusinessErrorCode.CONVERSATION_NOT_FOUND)).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(callRepository);
+
+        assertThat(activity.callsStarted).isZero();
     }
 
     @Test
@@ -223,6 +233,8 @@ class CallServiceTest {
                         .isEqualTo(BusinessErrorCode.CONVERSATION_READ_ONLY)).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(callRepository, callBroadcaster);
+
+        assertThat(activity.callsStarted).isZero();
     }
 
     @Test
@@ -239,6 +251,8 @@ class CallServiceTest {
                         .isEqualTo(BusinessErrorCode.FRIENDSHIP_REQUIRED)).verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(callRepository, callBroadcaster);
+
+        assertThat(activity.callsStarted).isZero();
     }
 
     // --- liveCall ------------------------------------------------------------------------
@@ -594,6 +608,8 @@ class CallServiceTest {
         assertThat(broadcastEvents(2)).extracting(CallEvent::type, CallEvent::recipientId).containsExactly(
                 tuple(CallEventType.ENDED, "alice"),
                 tuple(CallEventType.ENDED, "bob"));
+
+        assertThat(activity.callsEnded).hasSize(1);
     }
 
     @Test
@@ -606,6 +622,8 @@ class CallServiceTest {
         StepVerifier.create(service.leave("alice", "call-1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(callRepository).end("call-1", CallStatus.MISSED, NOW);
+
+        assertThat(activity.callsEnded).isEmpty();
     }
 
     @Test
@@ -822,6 +840,8 @@ class CallServiceTest {
         StepVerifier.create(service.decline("bob", "call-1")).expectComplete().verify(Duration.ofSeconds(10));
 
         assertThat(broadcastEvents(2)).extracting(CallEvent::type).containsOnly(CallEventType.ENDED);
+
+        assertThat(activity.callsEnded).isEmpty();
     }
 
     @Test
@@ -919,6 +939,8 @@ class CallServiceTest {
         StepVerifier.create(service.leave("bob", "call-1")).expectComplete().verify(Duration.ofSeconds(10));
 
         verifyNoInteractions(chatService, callBroadcaster);
+
+        assertThat(activity.callsEnded).isEmpty();
     }
 
     // --- expire --------------------------------------------------------------------------
@@ -967,5 +989,20 @@ class CallServiceTest {
         StepVerifier.create(service.expire()).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(callRepository).end("call-1", CallStatus.ENDED, NOW);
+    }
+
+    @Test
+    @DisplayName("an answered call reports how long it ran, from its first ring to the end")
+    void end_shouldReportTheCallsDuration_fromItsFirstRing() {
+        Call fiveMinutesOld = new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, CallStatus.ACTIVE,
+                NOW.minus(Duration.ofMinutes(5)), null, List.of("alice", "bob"), List.of());
+        when(callRepository.end("call-1", CallStatus.ENDED, NOW)).thenReturn(Mono.just(new Call("call-1", "conv-1",
+                "alice", "Alice", CallMedia.VIDEO, CallStatus.ENDED, NOW.minus(Duration.ofMinutes(5)), NOW,
+                List.of("alice", "bob"), List.of())));
+
+        StepVerifier.create(service.end(fiveMinutesOld, CallStatus.ENDED, "alice"))
+                .expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(activity.callsEnded).containsExactly(Duration.ofMinutes(5));
     }
 }

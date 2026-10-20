@@ -7,6 +7,7 @@ import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpHeaders;
@@ -41,6 +42,9 @@ class WebFluxSecurityConfigTest {
 
     @Autowired
     private WebFluxSecurityConfig config;
+
+    @Value("${local.server.port}")
+    private int port;
 
     @MockitoBean
     private ReactiveJwtDecoder jwtDecoder;
@@ -165,5 +169,32 @@ class WebFluxSecurityConfigTest {
         client().post().uri("/actuator/prometheus")
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    @DisplayName("Prometheus shows HTTP latency in fixed buckets, and the chat's product metrics")
+    void prometheus_shouldExposeHttpLatencyBuckets_andTheProductMetrics() {
+        // A real server: the HTTP observation is recorded by the server's handler, not by a context-bound client.
+        WebTestClient server = WebTestClient.bindToServer().baseUrl("http://localhost:" + port)
+                .responseTimeout(Duration.ofSeconds(30)).build();
+        server.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
+
+        server.get().uri("/actuator/prometheus")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(metrics -> assertThat(metrics)
+                        .containsPattern("http_server_requests_seconds_bucket\\{[^}]*le=\"0\\.25\"")
+                        // The real series names, as Grafana queries them.
+                        .contains("wely_chat_messages_sent_total{kind=\"text\"}")
+                        .contains("wely_chat_messages_sent_total{kind=\"photo\"}")
+                        .contains("wely_chat_calls_started_total ")
+                        .contains("wely_chat_calls_duration_seconds_bucket{le=\"30.0\"}")
+                        .contains("wely_chat_calls_duration_seconds_bucket{le=\"3600.0\"}")
+                        .contains("wely_chat_calls_duration_seconds_bucket{le=\"+Inf\"}")
+                        .contains("wely_chat_calls_duration_seconds_count ")
+                        .contains("wely_chat_calls_duration_seconds_sum ")
+                        .contains("wely_chat_calls_duration_seconds_max ")
+                        .contains("wely_chat_streams_active "));
     }
 }

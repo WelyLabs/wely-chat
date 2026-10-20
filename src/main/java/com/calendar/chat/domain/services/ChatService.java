@@ -8,6 +8,7 @@ import com.calendar.chat.domain.models.LiveMessage;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.models.PostedMessage;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
 import com.calendar.chat.exception.BusinessErrorCode;
@@ -28,14 +29,16 @@ public class ChatService {
     private final MessageBroadcaster messageBroadcaster;
     private final AccountGuard guard;
     private final FriendshipService friendships;
+    private final ChatActivity activity;
     private final Clock clock;
 
     public ChatService(ChatRepository chatRepository, MessageBroadcaster messageBroadcaster, AccountGuard guard,
-                       FriendshipService friendships, Clock clock) {
+                       FriendshipService friendships, ChatActivity activity, Clock clock) {
         this.chatRepository = chatRepository;
         this.messageBroadcaster = messageBroadcaster;
         this.guard = guard;
         this.friendships = friendships;
+        this.activity = activity;
         this.clock = clock;
     }
 
@@ -73,6 +76,9 @@ public class ChatService {
                         : requireFriendsInDirect(conversation, message.senderId())
                                 .then(Mono.defer(() -> chatRepository.postMessage(message))))
                 .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
+                // Stored: the message is sent, whatever happens to its live delivery.
+                .doOnNext(stored -> activity.messageSent(message.photo() == null
+                        ? ChatActivity.MessageKind.TEXT : ChatActivity.MessageKind.PHOTO))
                 // Recipients come from the stored conversation, never from the client's receiverId.
                 .flatMapMany(memberIds -> liveRecipients(message, memberIds, message.senderId()))
                 .concatMap(recipientId -> messageBroadcaster.broadcast(

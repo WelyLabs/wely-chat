@@ -6,6 +6,7 @@ import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
@@ -43,7 +44,7 @@ class ChatApplicationConfigTest {
         MessageBroadcaster broadcaster = mock(MessageBroadcaster.class);
 
         ChatService service = config.chatService(repository, broadcaster, mock(AccountGuard.class),
-                mock(FriendshipService.class));
+                mock(FriendshipService.class), mock(ChatActivity.class));
 
         // No @Service on ChatService: that is what makes it testable without a Spring
         // context and keeps the domain free of framework annotations.
@@ -91,7 +92,7 @@ class ChatApplicationConfigTest {
 
         CallService service = config.callService(calls, mock(ChatRepository.class), relay,
                 mock(IceServerProvider.class), mock(CallBroadcaster.class), mock(ChatService.class),
-                mock(CallNoticeFormatter.class), mock(AccountGuard.class), 12);
+                mock(CallNoticeFormatter.class), mock(AccountGuard.class), 12, mock(ChatActivity.class));
 
         assertThat(service).isNotNull();
         verifyNoInteractions(calls, relay);

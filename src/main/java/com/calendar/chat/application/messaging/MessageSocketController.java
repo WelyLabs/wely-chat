@@ -4,6 +4,7 @@ import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.application.dtos.LiveMessageDTO;
 import com.calendar.chat.application.mappers.LiveMessageMapper;
 import com.calendar.chat.domain.models.Message;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PhotoService;
@@ -25,14 +26,17 @@ public class MessageSocketController {
     private final PhotoService photoService;
     private final LiveSessions liveSessions;
     private final LiveMessageMapper liveMessageMapper;
+    private final ChatActivity activity;
 
     public MessageSocketController(ChatService chatService, PresenceService presenceService, PhotoService photoService,
-                                   LiveSessions liveSessions, LiveMessageMapper liveMessageMapper) {
+                                   LiveSessions liveSessions, LiveMessageMapper liveMessageMapper,
+                                   ChatActivity activity) {
         this.chatService = chatService;
         this.presenceService = presenceService;
         this.photoService = photoService;
         this.liveSessions = liveSessions;
         this.liveMessageMapper = liveMessageMapper;
+        this.activity = activity;
     }
 
     /** Answers with the stored message, which the client takes as delivered. */
@@ -53,7 +57,10 @@ public class MessageSocketController {
         // The user counts as online for as long as this stream is open; deleting the account ends it.
         // A photo's URL is signed here, by the pod that delivers it: it never travels on the broker.
         return liveSessions.attach(userId, presenceService.track(userId, chatService.streamMessages(userId)
-                .concatMap(photoService::signed)
-                .map(liveMessageMapper::toDTO)));
+                        .concatMap(photoService::signed)
+                        .map(liveMessageMapper::toDTO)))
+                // Counted open from subscription to whichever end comes: complete, error or the client's cancel.
+                .doOnSubscribe(subscription -> activity.streamOpened())
+                .doFinally(signal -> activity.streamClosed());
     }
 }

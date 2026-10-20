@@ -1,21 +1,22 @@
 package com.calendar.chat.application.messaging;
 
 import static org.mockito.Mockito.lenient;
-import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.application.dtos.ChatInputDTO;
 import com.calendar.chat.application.dtos.LiveMessageDTO;
 import com.calendar.chat.application.mappers.LiveMessageMapper;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.LiveMessage;
-import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageType;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.PresenceRepository;
+import com.calendar.chat.domain.ports.RecordingChatActivity;
 import com.calendar.chat.domain.services.AccountGuard;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.LiveSessions;
+import com.calendar.chat.domain.services.PhotoService;
 import com.calendar.chat.domain.services.PresenceService;
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.BusinessException;
@@ -60,6 +61,7 @@ class MessageSocketControllerTest {
     @Mock private LiveSessions liveSessions;
 
     private MessageSocketController controller;
+    private final RecordingChatActivity activity = new RecordingChatActivity();
 
     @BeforeEach
     void setUp() {
@@ -68,7 +70,7 @@ class MessageSocketControllerTest {
         // An active account: the live session relays the stream as is.
         lenient().when(liveSessions.attach(anyString(), any())).thenAnswer(call -> call.getArgument(1));
         controller = new MessageSocketController(chatService, presenceService, photoService, liveSessions,
-                Mappers.getMapper(LiveMessageMapper.class));
+                Mappers.getMapper(LiveMessageMapper.class), activity);
     }
 
     @Test
@@ -205,7 +207,7 @@ class MessageSocketControllerTest {
         PresenceService presence = new PresenceService(presenceRepository, mock(ChatRepository.class), guard, "pod-1",
                 Clock.systemUTC());
         MessageSocketController wired = new MessageSocketController(chatService, presence, photoService,
-                new LiveSessions(guard), Mappers.getMapper(LiveMessageMapper.class));
+                new LiveSessions(guard), Mappers.getMapper(LiveMessageMapper.class), activity);
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
         when(markers.isDeleted(SENDER_ID)).thenReturn(Mono.just(true),
@@ -223,5 +225,40 @@ class MessageSocketControllerTest {
 
         verify(presenceRepository, never()).connect(anyString(), anyString(), anyString(), any());
         verify(presenceRepository, never()).refresh(any(), any());
+    }
+
+    @Test
+    @DisplayName("an open stream is counted from its subscription until the client cancels it")
+    void streamMessage_shouldCountTheStreamAsOpen_untilItIsCancelled() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
+        when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
+
+        StepVerifier.create(controller.streamMessage(jwt))
+                .expectSubscription()
+                .then(() -> {
+                    assertThat(activity.streamsOpened).isEqualTo(1);
+                    assertThat(activity.streamsClosed).isZero();
+                })
+                .thenCancel()
+                .verify(Duration.ofSeconds(10));
+
+        assertThat(activity.streamsClosed).isEqualTo(1);
+    }
+
+    @Test
+    void streamMessage_shouldCountTheStreamAsClosed_whenItFails() {
+        when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
+        when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
+        when(presenceService.track(eq(SENDER_ID), any())).thenAnswer(call -> call.getArgument(1));
+        when(liveSessions.attach(eq(SENDER_ID), any()))
+                .thenReturn(Flux.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
+
+        StepVerifier.create(controller.streamMessage(jwt))
+                .expectError(BusinessException.class)
+                .verify(Duration.ofSeconds(10));
+
+        assertThat(activity.streamsOpened).isEqualTo(1);
+        assertThat(activity.streamsClosed).isEqualTo(1);
     }
 }

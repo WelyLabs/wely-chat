@@ -3,6 +3,7 @@ package com.calendar.chat.configuration;
 import com.calendar.chat.domain.ports.CallBroadcaster;
 import com.calendar.chat.domain.ports.CallNoticeFormatter;
 import com.calendar.chat.domain.ports.CallRepository;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
 import com.calendar.chat.domain.ports.FriendshipDirectory;
@@ -58,8 +59,10 @@ public class ChatApplicationConfig {
     public ChatService chatService(ChatRepository chatRepository,
                                   MessageBroadcaster messageBroadcaster,
                                   AccountGuard accountGuard,
-                                  FriendshipService friendshipService) {
-        return new ChatService(chatRepository, messageBroadcaster, accountGuard, friendshipService, Clock.systemUTC());
+                                  FriendshipService friendshipService,
+                                  ChatActivity chatActivity) {
+        return new ChatService(chatRepository, messageBroadcaster, accountGuard, friendshipService, chatActivity,
+                Clock.systemUTC());
     }
 
     @Bean
@@ -87,9 +90,10 @@ public class ChatApplicationConfig {
                                    IceServerProvider iceServerProvider, CallBroadcaster callBroadcaster,
                                    ChatService chatService, CallNoticeFormatter noticeFormatter,
                                    AccountGuard accountGuard,
-                                   @Value("${app.calls.max-participants}") int maxParticipants) {
+                                   @Value("${app.calls.max-participants}") int maxParticipants,
+                                   ChatActivity chatActivity) {
         return new CallService(callRepository, chatRepository, mediaRelay, iceServerProvider, callBroadcaster,
-                chatService, noticeFormatter, accountGuard, maxParticipants, Clock.systemUTC());
+                chatService, noticeFormatter, accountGuard, maxParticipants, chatActivity, Clock.systemUTC());
     }
 
     @Bean

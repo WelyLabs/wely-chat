@@ -4,18 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
 import com.calendar.chat.domain.models.BroadcastKind;
 import com.calendar.chat.domain.models.ConversationDetail;
-import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.ConversationSummary;
+import com.calendar.chat.domain.models.ConversationType;
 import com.calendar.chat.domain.models.LiveMessage;
-import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.models.MessageType;
+import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.models.PostedMessage;
+import com.calendar.chat.domain.ports.ChatActivity;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.FriendshipDirectory;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
+import com.calendar.chat.domain.ports.RecordingChatActivity;
 import com.calendar.chat.exception.BusinessErrorCode;
 import com.calendar.chat.exception.BusinessException;
 import com.calendar.chat.exception.TechnicalErrorCode;
@@ -66,12 +68,13 @@ class ChatServiceTest {
     private static final Instant NOW = Instant.parse("2026-10-14T08:00:00Z");
 
     private ChatService chatService;
+    private final RecordingChatActivity activity = new RecordingChatActivity();
 
     @BeforeEach
     void setUp() {
         AccountGuard guard = new AccountGuard(markers);
         chatService = new ChatService(chatRepository, messageBroadcaster, guard, new FriendshipService(friendships, guard),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                activity, Clock.fixed(NOW, ZoneOffset.UTC));
         // Everyone is friends unless a test says so.
         lenient().when(friendships.areFriends(anyString(), anyString())).thenReturn(Mono.just(true));
         // Nobody is deleted unless a test says so.
@@ -227,6 +230,8 @@ class ChatServiceTest {
         verify(messageBroadcaster).broadcast(addressedTo(message, "hugo"));
         verify(messageBroadcaster, never()).broadcast(addressedTo(message, "caller"));
         verify(messageBroadcaster, never()).broadcast(new LiveMessage(message, BroadcastKind.NEW));
+
+        assertThat(activity.messagesSent).containsExactly(ChatActivity.MessageKind.TEXT);
     }
 
     @Test
@@ -279,6 +284,8 @@ class ChatServiceTest {
                 .verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, never()).broadcast(any());
+
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -294,6 +301,8 @@ class ChatServiceTest {
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
+
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -322,6 +331,8 @@ class ChatServiceTest {
         verify(chatRepository, never()).findMembership(any(), any());
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
+
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -335,6 +346,8 @@ class ChatServiceTest {
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
+
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -349,6 +362,8 @@ class ChatServiceTest {
 
         verify(chatRepository, never()).postMessage(any());
         verify(messageBroadcaster, never()).broadcast(any());
+
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -598,6 +613,9 @@ class ChatServiceTest {
                 .expectComplete().verify(Duration.ofSeconds(10));
         // Through the system path, never postMessage and its sender check.
         verify(chatRepository, never()).postMessage(any());
+
+        // An application notice is not a member's message: nothing counted.
+        assertThat(activity.messagesSent).isEmpty();
     }
 
     @Test
@@ -766,5 +784,17 @@ class ChatServiceTest {
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE)).expectNextCount(1).expectComplete().verify(Duration.ofSeconds(10));
 
         verify(messageBroadcaster, times(2)).broadcast(any());
+    }
+
+    @Test
+    @DisplayName("a stored message carrying a photo counts as a photo")
+    void sendMessage_shouldReportAPhoto_whenTheMessageCarriesOne() {
+        Message message = new Message("m-1", "caller", "Caller", null, "conv-1", "", NOW, Photo.stored("chat/k.jpg", 4, 3));
+        memberOf("caller");
+        when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller")));
+
+        StepVerifier.create(chatService.sendMessage(message)).expectNext(message).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(activity.messagesSent).containsExactly(ChatActivity.MessageKind.PHOTO);
     }
 }
