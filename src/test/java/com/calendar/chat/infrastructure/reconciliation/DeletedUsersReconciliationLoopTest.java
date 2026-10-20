@@ -2,8 +2,10 @@ package com.calendar.chat.infrastructure.reconciliation;
 
 import com.calendar.chat.domain.models.ReconciliationReport;
 import com.calendar.chat.domain.services.AccountReconciliationService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -86,7 +88,7 @@ class DeletedUsersReconciliationLoopTest {
     @DisplayName("a failed pass is retried after the retry interval, and the loop then waits the interval")
     void start_shouldRetryAfterTheRetryInterval_whenAPassFails() {
         when(reconciliation.reconcile())
-                .thenReturn(counted(Mono.error(new ChatException(ChatErrorCode.USERS_UNAVAILABLE))))
+                .thenReturn(counted(Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE))))
                 .thenReturn(counted(Mono.just(CLEAN)));
 
         loop(FAST, NEVER, FAST).start();
@@ -134,7 +136,16 @@ class DeletedUsersReconciliationLoopTest {
 
     @Test
     void passOnce_shouldRetryAfterTheRetryInterval_whenThePassFails() {
-        when(reconciliation.reconcile()).thenReturn(Mono.error(new ChatException(ChatErrorCode.USERS_UNAVAILABLE)));
+        when(reconciliation.reconcile()).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE)));
+
+        StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
+                .expectNext(RETRY_INTERVAL)
+                .verifyComplete();
+    }
+
+    @Test
+    void passOnce_shouldRetryAfterTheRetryInterval_whenThePassIsRefused() {
+        when(reconciliation.reconcile()).thenReturn(Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(loop(NEVER, INTERVAL, RETRY_INTERVAL).passOnce())
                 .expectNext(RETRY_INTERVAL)

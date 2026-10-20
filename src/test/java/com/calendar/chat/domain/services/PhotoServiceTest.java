@@ -14,8 +14,10 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.MediaStore;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -134,8 +136,8 @@ class PhotoServiceTest {
         when(chatRepository.findById("c1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.send("c1", "mallory", "Mallory", UPLOAD, ""))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
         verify(mediaStore, never()).store(any(), any(), any());
     }
@@ -145,8 +147,8 @@ class PhotoServiceTest {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
         verify(chatRepository, never()).findById(any(), any());
         verify(mediaStore, never()).store(any(), any(), any());
@@ -158,8 +160,8 @@ class PhotoServiceTest {
         member(readOnlyDirect(), "alice");
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_READ_ONLY)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_READ_ONLY)
                 .verify();
         verify(mediaStore, never()).store(any(), any(), any());
         verify(chatService, never()).sendMessage(any());
@@ -172,11 +174,11 @@ class PhotoServiceTest {
                 List.of(), 0, null, null);
         member(direct, "alice");
         when(chatService.requireFriendsInDirect(direct, "alice"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.FRIENDSHIP_REQUIRED)));
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.FRIENDSHIP_REQUIRED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.FRIENDSHIP_REQUIRED)
                 .verify();
         verify(mediaStore, never()).store(any(), any(), any());
         verify(chatService, never()).sendMessage(any());
@@ -216,11 +218,11 @@ class PhotoServiceTest {
     @Test
     void send_shouldNotSendTheMessage_whenThePhotoIsRefused() {
         member(eventGroup, "alice");
-        when(mediaStore.store(anyString(), any(), any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID)));
+        when(mediaStore.store(anyString(), any(), any())).thenReturn(Mono.error(new BusinessException(BusinessErrorCode.PHOTO_INVALID)));
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.PHOTO_INVALID)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.PHOTO_INVALID)
                 .verify();
         verify(chatService, never()).sendMessage(any());
     }
@@ -249,8 +251,8 @@ class PhotoServiceTest {
         when(chatRepository.findById("c1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.page("c1", "mallory", null, 30))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
         verify(photoRepository, never()).findPage(any(), any(), any(Integer.class));
     }
@@ -269,8 +271,8 @@ class PhotoServiceTest {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.remove("c1", "m1", "alice"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
         verify(mediaStore, never()).delete(any());
@@ -319,8 +321,8 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
 
         StepVerifier.create(service.remove("c1", "m1", "bob"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.PHOTO_REMOVAL_DENIED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.PHOTO_REMOVAL_DENIED)
                 .verify();
         verify(chatRepository, never()).markPhotoRemoved(any(), any());
         verify(mediaStore, never()).delete(any());
@@ -333,8 +335,8 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
 
         StepVerifier.create(service.remove("c1", "m1", "bob"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.PHOTO_REMOVAL_DENIED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.PHOTO_REMOVAL_DENIED)
                 .verify();
     }
 
@@ -344,8 +346,8 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "gone")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.remove("c1", "gone", "alice"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.PHOTO_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.PHOTO_NOT_FOUND)
                 .verify();
     }
 
@@ -356,7 +358,7 @@ class PhotoServiceTest {
         when(photoRepository.find("c1", "m1")).thenReturn(Mono.just(photoOf("alice")));
         when(chatRepository.markPhotoRemoved("c1", "m1")).thenReturn(Mono.empty());
         when(photoRepository.delete("c1", "m1")).thenReturn(Mono.empty());
-        when(mediaStore.delete(anyString())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+        when(mediaStore.delete(anyString())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
         StepVerifier.create(service.remove("c1", "m1", "alice")).verifyComplete();
     }
@@ -442,7 +444,7 @@ class PhotoServiceTest {
         storesAs(1600, 1200);
         when(chatService.sendMessage(any())).thenAnswer(call -> Mono.just(call.getArgument(0)));
         when(photoRepository.save(any())).thenReturn(Mono.empty());
-        when(mediaStore.urls(any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+        when(mediaStore.urls(any())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
         StepVerifier.create(service.send("c1", "alice", "Alice", UPLOAD, ""))
                 .assertNext(sent -> {
@@ -467,7 +469,7 @@ class PhotoServiceTest {
     void page_shouldListPhotosWithoutUrl_whenSigningFails() {
         member(eventGroup, "bob");
         when(photoRepository.findPage("c1", null, 30)).thenReturn(Flux.just(photoOf("alice")));
-        when(mediaStore.urls(any())).thenReturn(Mono.error(new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE)));
+        when(mediaStore.urls(any())).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE)));
 
         StepVerifier.create(service.page("c1", "bob", null, 30))
                 .assertNext(photo -> {

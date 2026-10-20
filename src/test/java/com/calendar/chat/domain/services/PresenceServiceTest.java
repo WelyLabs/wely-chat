@@ -5,8 +5,8 @@ import com.calendar.chat.domain.models.Presence;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.PresenceRepository;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -232,8 +232,8 @@ class PresenceServiceTest {
         when(chatRepository.findByParticipantIds(List.of("alice", "carol"))).thenReturn(Mono.empty());
 
         StepVerifier.create(service.getPresence("alice", "carol"))
-                .expectErrorMatches(error -> error instanceof ChatException e
-                        && e.getErrorCode() == ChatErrorCode.PRESENCE_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException e
+                        && e.getErrorCode() == BusinessErrorCode.PRESENCE_NOT_FOUND)
                 .verify();
         verify(presenceRepository, never()).find(any(), any());
     }

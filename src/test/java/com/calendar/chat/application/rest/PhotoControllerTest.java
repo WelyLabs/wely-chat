@@ -4,8 +4,8 @@ import com.calendar.chat.domain.models.ConversationPhoto;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.services.PhotoService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,8 +68,8 @@ class PhotoControllerTest {
         return Mono.just(parts);
     }
 
-    private static boolean failsWith(Throwable error, ChatErrorCode code) {
-        return error instanceof ChatException chat && chat.getErrorCode() == code;
+    private static boolean failsWith(Throwable error, BusinessErrorCode code) {
+        return error instanceof BusinessException business && business.getErrorCode() == code;
     }
 
     @Test
@@ -84,20 +84,20 @@ class PhotoControllerTest {
     @Test
     void send_shouldFailWithAccountDeleted_whenTheSenderIsDeleted() {
         when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq("")))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
                 .verify();
     }
 
     @Test
     void send_shouldFailWithReadOnly_whenTheConversationIsReadOnly() {
         when(photoService.send(eq("c1"), eq("alice"), eq("alice"), any(), eq("")))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_READ_ONLY)));
 
         StepVerifier.create(controller.send(jwt, "c1", form(file(3), null)))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_READ_ONLY))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_READ_ONLY))
                 .verify();
     }
 
@@ -111,7 +111,7 @@ class PhotoControllerTest {
     @Test
     void send_shouldRefuseAPhotoOverTenMegabytes_withoutCallingTheService() {
         StepVerifier.create(controller.send(jwt, "c1", form(file(PhotoController.MAX_PHOTO_BYTES + 1), null)))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.PHOTO_TOO_LARGE))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_TOO_LARGE))
                 .verify();
         verify(photoService, never()).send(any(), any(), any(), any(), any());
     }
@@ -119,14 +119,14 @@ class PhotoControllerTest {
     @Test
     void send_shouldRefuseAFormWithoutAFile() {
         StepVerifier.create(controller.send(jwt, "c1", form(null, "just text")))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.PHOTO_INVALID))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_INVALID))
                 .verify();
     }
 
     @Test
     void send_shouldRefuseAnOverlongCaption() {
         StepVerifier.create(controller.send(jwt, "c1", form(mock(FilePart.class), "x".repeat(PhotoController.MAX_CAPTION_LENGTH + 1))))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.PHOTO_INVALID))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.PHOTO_INVALID))
                 .verify();
     }
 

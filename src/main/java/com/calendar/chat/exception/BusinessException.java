@@ -9,11 +9,11 @@ import lombok.Getter;
  * {@code GlobalErrorHandler} turns it into an RFC 7807 response.
  */
 @Getter
-public class ChatException extends RuntimeException {
+public class BusinessException extends RuntimeException {
 
-    private final ChatErrorCode errorCode;
+    private final BusinessErrorCode errorCode;
 
-    public ChatException(ChatErrorCode errorCode) {
+    public BusinessException(BusinessErrorCode errorCode) {
         super(errorCode.getDetail());
         this.errorCode = errorCode;
     }

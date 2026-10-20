@@ -1,8 +1,8 @@
 package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Mono;
 
 import java.util.Collection;
@@ -22,7 +22,7 @@ public class AccountGuard {
     public Mono<Void> requireActive(String userId) {
         return markers.isDeleted(userId)
                 .flatMap(deleted -> deleted
-                        ? Mono.<Void>error(new ChatException(ChatErrorCode.ACCOUNT_DELETED))
+                        ? Mono.<Void>error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED))
                         : Mono.empty());
     }
 

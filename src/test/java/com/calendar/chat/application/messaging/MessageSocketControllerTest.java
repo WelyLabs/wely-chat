@@ -17,8 +17,10 @@ import com.calendar.chat.domain.services.AccountGuard;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.LiveSessions;
 import com.calendar.chat.domain.services.PresenceService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -185,11 +187,11 @@ class MessageSocketControllerTest {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
         when(presenceService.track(eq(SENDER_ID), any())).thenReturn(Flux.never());
-        when(liveSessions.attach(eq(SENDER_ID), any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+        when(liveSessions.attach(eq(SENDER_ID), any())).thenReturn(Flux.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.streamMessage(jwt))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
     }
 
@@ -206,15 +208,15 @@ class MessageSocketControllerTest {
         when(jwt.getClaimAsString("businessId")).thenReturn(SENDER_ID);
         when(chatService.streamMessages(SENDER_ID)).thenReturn(Flux.never());
         when(markers.isDeleted(SENDER_ID)).thenReturn(Mono.just(true),
-                Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(wired.streamMessage(jwt))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
         StepVerifier.create(wired.streamMessage(jwt))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
         StepVerifier.create(presence.heartbeat()).verifyComplete();
 

@@ -4,8 +4,8 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.EventGroup;
 import com.calendar.chat.domain.models.Message;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.persistence.mappers.ConversationMapper;
 import com.calendar.chat.infrastructure.persistence.models.dtos.MessageEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.ConversationEntity;
@@ -536,7 +536,7 @@ class MongoChatRepositoryAdapterTest {
     // --- account erasure --------------------------------------------------
 
     private static boolean storeUnavailable(Throwable error) {
-        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE;
+        return error instanceof TechnicalException technical && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE;
     }
 
     private static DataAccessResourceFailureException mongoDown() {

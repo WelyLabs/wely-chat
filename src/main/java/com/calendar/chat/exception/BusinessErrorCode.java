@@ -7,12 +7,15 @@ import org.springframework.http.HttpStatus;
 /**
  * Business outcomes this service refuses on, each with a stable code.
  *
- * <p>{@code code} is the contract a client branches on; {@code title} and {@code detail}
- * are English, for whoever reads the response or the logs.
+ * <p>{@code code} is the contract: it never changes, and it is what a client branches on.
+ * {@code title} and {@code detail} are for whoever reads the response or the logs, and are
+ * in English — the user-facing wording belongs to the frontend, which knows the reader's
+ * language. A dependency that fails is not a business outcome: it has its own
+ * {@link TechnicalErrorCode}.
  */
 @Getter
 @AllArgsConstructor
-public enum ChatErrorCode {
+public enum BusinessErrorCode {
 
     /**
      * Covers both "no such conversation" and "not yours", on purpose. Telling the two
@@ -102,32 +105,7 @@ public enum ChatErrorCode {
             "CHT-BUS-013",
             "Friends only",
             "A private conversation is only open between friends.",
-            HttpStatus.FORBIDDEN),
-
-    MEDIA_UNAVAILABLE(
-            "CHT-TEC-001",
-            "Photo storage unavailable",
-            "The photo could not be stored or removed; try again shortly.",
-            HttpStatus.BAD_GATEWAY),
-
-    CALLS_UNAVAILABLE(
-            "CHT-TEC-002",
-            "Calls unavailable",
-            "The call service could not be reached; try again shortly.",
-            HttpStatus.BAD_GATEWAY),
-
-    /** wely-users' list of deleted accounts could not be read; only the reconciliation loop reads it. */
-    USERS_UNAVAILABLE(
-            "CHT-TEC-003",
-            "User directory unavailable",
-            "The deleted accounts could not be listed from wely-users; try again shortly.",
-            HttpStatus.BAD_GATEWAY),
-
-    STORE_UNAVAILABLE(
-            "CHT-TEC-004",
-            "Message store unavailable",
-            "The message store could not be reached; try again shortly.",
-            HttpStatus.BAD_GATEWAY);
+            HttpStatus.FORBIDDEN);
 
     private final String code;
     private final String title;

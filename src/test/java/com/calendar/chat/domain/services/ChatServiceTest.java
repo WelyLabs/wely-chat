@@ -16,8 +16,10 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.FriendshipDirectory;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -84,8 +86,8 @@ class ChatServiceTest {
                 .filter(List.of(userIds)::contains));
     }
 
-    private static boolean failsWith(Throwable error, ChatErrorCode code) {
-        return error instanceof ChatException chat && chat.getErrorCode() == code;
+    private static boolean failsWith(Throwable error, BusinessErrorCode code) {
+        return error instanceof BusinessException business && business.getErrorCode() == code;
     }
 
     @Test
@@ -122,7 +124,7 @@ class ChatServiceTest {
         when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
                 .verify();
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
@@ -133,7 +135,7 @@ class ChatServiceTest {
         when(chatRepository.findByParticipantIds(List.of("user1", "user1"))).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user1"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
                 .verify();
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
@@ -169,7 +171,7 @@ class ChatServiceTest {
         when(chatRepository.findByParticipantIds(List.of("user1", "user2"))).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_NOT_FOUND))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_NOT_FOUND))
                 .verify();
 
         verify(chatRepository, never()).saveWithInitialBucket(any());
@@ -180,7 +182,7 @@ class ChatServiceTest {
         deleted("user1");
 
         StepVerifier.create(chatService.readOrCreateConversation("user1", "user2"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
                 .verify();
 
         verify(chatRepository, never()).findByParticipantIds(any());
@@ -285,8 +287,8 @@ class ChatServiceTest {
         when(chatRepository.findMembership("conv-1", "intruder")).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.sendMessage(message))
-                .expectErrorMatches(error -> error instanceof ChatException
-                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException
+                        && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
 
         verify(chatRepository, never()).postMessage(any());
@@ -301,7 +303,7 @@ class ChatServiceTest {
         when(chatRepository.postMessage(message)).thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.sendMessage(message))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_NOT_FOUND))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_NOT_FOUND))
                 .verify();
 
         verify(messageBroadcaster, never()).broadcast(any());
@@ -313,7 +315,7 @@ class ChatServiceTest {
         deleted("caller");
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.ACCOUNT_DELETED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.ACCOUNT_DELETED))
                 .verify();
 
         verify(chatRepository, never()).findMembership(any(), any());
@@ -327,7 +329,7 @@ class ChatServiceTest {
         when(chatRepository.findMembership("conv-1", "caller")).thenReturn(Mono.just(direct(true)));
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.CONVERSATION_READ_ONLY))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.CONVERSATION_READ_ONLY))
                 .verify();
 
         verify(chatRepository, never()).postMessage(any());
@@ -341,7 +343,7 @@ class ChatServiceTest {
         when(friendships.areFriends("caller", "friend")).thenReturn(Mono.just(false));
 
         StepVerifier.create(chatService.sendMessage(messageFrom("caller")))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
                 .verify();
 
         verify(chatRepository, never()).postMessage(any());
@@ -360,7 +362,7 @@ class ChatServiceTest {
         when(friendships.areFriends("caller", "friend")).thenReturn(Mono.just(false));
 
         StepVerifier.create(chatService.requireFriendsInDirect(direct(false), "caller"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.FRIENDSHIP_REQUIRED))
+                .expectErrorMatches(error -> failsWith(error, BusinessErrorCode.FRIENDSHIP_REQUIRED))
                 .verify();
     }
 
@@ -396,7 +398,7 @@ class ChatServiceTest {
         Message message = messageFrom("caller");
         memberOf("caller");
         when(chatRepository.postMessage(message)).thenReturn(Mono.just(List.of("caller", "ines")));
-        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(chatService.sendMessage(message)).expectNext(message).verifyComplete();
 
@@ -478,7 +480,7 @@ class ChatServiceTest {
     @Test
     void broadcastUpdate_shouldStillComplete_whenTheMarkersCannotBeRead() {
         members("olivia", "olivia", "alice");
-        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(chatService.broadcastUpdate(photoRemovedBy("alice"), "olivia")).verifyComplete();
 
@@ -635,8 +637,8 @@ class ChatServiceTest {
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.postConversationNotice("gone", "call:c1", "x"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
     }
 
@@ -672,7 +674,7 @@ class ChatServiceTest {
     @DisplayName("the notice is stored: markers that cannot be read cost its live push, not the notice")
     void postSystemNotice_shouldStillPostTheNotice_whenTheMarkersCannotBeRead() {
         groupStores("event-1", false, "olivia", "bob");
-        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(markers.findDeletedAmong(any())).thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
                 .assertNext(notice -> assertThat(notice.content()).isEqualTo(NOTICE))
@@ -732,8 +734,8 @@ class ChatServiceTest {
                 .thenReturn(Mono.empty());
 
         StepVerifier.create(chatService.postSystemNotice("event-1", NOTICE))
-                .expectErrorMatches(error -> error instanceof ChatException
-                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException
+                        && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
 
         verify(messageBroadcaster, never()).broadcast(any());

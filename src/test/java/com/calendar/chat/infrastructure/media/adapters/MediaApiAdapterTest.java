@@ -2,8 +2,10 @@ package com.calendar.chat.infrastructure.media.adapters;
 
 import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.StoredMedia;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.media.mappers.MediaMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,8 +68,20 @@ class MediaApiAdapterTest {
                 .build();
     }
 
-    private static boolean failsWith(Throwable error, ChatErrorCode code) {
-        return error instanceof ChatException chat && chat.getErrorCode() == code;
+    private static boolean failsWith(Throwable error, BusinessErrorCode code) {
+        return error instanceof BusinessException business && business.getErrorCode() == code;
+    }
+
+    private static boolean failsWith(Throwable error, TechnicalErrorCode code) {
+        return error instanceof TechnicalException technical && technical.getErrorCode() == code;
+    }
+
+    /** The name of the code the error carries, whichever of the two kinds it is. */
+    private static String codeOf(Throwable error) {
+        if (error instanceof BusinessException business) {
+            return business.getErrorCode().name();
+        }
+        return error instanceof TechnicalException technical ? technical.getErrorCode().name() : null;
     }
 
     @Test
@@ -109,11 +123,11 @@ class MediaApiAdapterTest {
             "UNAUTHORIZED, MED-REQ-001, MEDIA_UNAVAILABLE",
             "BAD_GATEWAY, MED-TEC-001, MEDIA_UNAVAILABLE"
     })
-    void store_shouldTranslateTheMediaServicesErrorCode(HttpStatus status, String mediaCode, ChatErrorCode expected) {
+    void store_shouldTranslateTheMediaServicesErrorCode(HttpStatus status, String mediaCode, String expected) {
         answer = problem(status, mediaCode);
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
-                .expectErrorMatches(error -> failsWith(error, expected))
+                .expectErrorMatches(error -> expected.equals(codeOf(error)))
                 .verify();
     }
 
@@ -122,20 +136,32 @@ class MediaApiAdapterTest {
         answer = ClientResponse.create(HttpStatus.INTERNAL_SERVER_ERROR).body("<html>oops</html>").build();
 
         StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.MEDIA_UNAVAILABLE))
+                .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
                 .verify();
     }
 
     @Test
     void store_shouldAnswerMediaUnavailable_whenTheServiceCannotBeReached() {
+        IllegalStateException refused = new IllegalStateException("connection refused");
         WebClient unreachable = WebClient.builder()
-                .exchangeFunction(request -> Mono.error(new IllegalStateException("connection refused")))
+                .exchangeFunction(request -> Mono.error(refused))
                 .build();
         MediaApiAdapter offline = new MediaApiAdapter(unreachable, Mappers.getMapper(MediaMapper.class));
 
         StepVerifier.create(offline.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.MEDIA_UNAVAILABLE))
-                .verify();
+                .verifyErrorSatisfies(error -> {
+                    assertThat(failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE)).isTrue();
+                    // Kept as the cause, so the ERROR log shows why wely-media could not be reached.
+                    assertThat(error).hasRootCause(refused);
+                });
+    }
+
+    @Test
+    void store_shouldKeepTheUnreadableBodyAsTheCause() {
+        answer = ClientResponse.create(HttpStatus.INTERNAL_SERVER_ERROR).body("<html>oops</html>").build();
+
+        StepVerifier.create(adapter.store("chat/c1/m1.jpg", new byte[] {1}, MediaProfile.PHOTO))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isNotNull());
     }
 
     @Test
@@ -156,7 +182,7 @@ class MediaApiAdapterTest {
         answer = problem(HttpStatus.BAD_GATEWAY, "MED-TEC-001");
 
         StepVerifier.create(adapter.delete("chat/c1/m1.jpg"))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.MEDIA_UNAVAILABLE))
+                .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
                 .verify();
     }
 
@@ -189,12 +215,18 @@ class MediaApiAdapterTest {
         answer = problem(HttpStatus.FORBIDDEN, "MED-BUS-003");
 
         StepVerifier.create(adapter.urls(List.of("users/u1.jpg")))
-                .expectErrorMatches(error -> failsWith(error, ChatErrorCode.MEDIA_UNAVAILABLE))
+                .expectErrorMatches(error -> failsWith(error, TechnicalErrorCode.MEDIA_UNAVAILABLE))
                 .verify();
     }
 
     @Test
-    void errorCodeOf_shouldTreatAMissingCodeAsUnavailable() {
-        assertThat(MediaApiAdapter.errorCodeOf(null)).isEqualTo(ChatErrorCode.MEDIA_UNAVAILABLE);
+    void exceptionOf_shouldTreatAMissingCodeAsUnavailable() {
+        assertThat(failsWith(MediaApiAdapter.exceptionOf(null), TechnicalErrorCode.MEDIA_UNAVAILABLE)).isTrue();
+    }
+
+    @Test
+    void exceptionOf_shouldKeepARefusedImageABusinessFailure() {
+        assertThat(failsWith(MediaApiAdapter.exceptionOf("MED-BUS-001"), BusinessErrorCode.PHOTO_INVALID)).isTrue();
+        assertThat(failsWith(MediaApiAdapter.exceptionOf("MED-BUS-002"), BusinessErrorCode.PHOTO_TOO_LARGE)).isTrue();
     }
 }

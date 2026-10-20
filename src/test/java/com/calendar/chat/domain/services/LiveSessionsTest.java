@@ -1,8 +1,8 @@
 package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,8 +53,8 @@ class LiveSessionsTest {
         TestPublisher<String> stream = TestPublisher.create();
 
         StepVerifier.create(sessions.attach("alice", stream.flux()))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
 
         stream.assertWasNotSubscribed();

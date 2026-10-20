@@ -20,8 +20,8 @@ import com.calendar.chat.domain.ports.CallRepository;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -86,9 +86,9 @@ public class CallService {
     public Mono<Call> start(String userId, String userName, String conversationId, CallMedia media) {
         return guard.requireActive(userId)
                 .then(Mono.defer(() -> chatRepository.findById(conversationId, userId)))
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(conversation -> conversation.isReadOnly()
-                        ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        ? Mono.<ConversationDetail>error(new BusinessException(BusinessErrorCode.CONVERSATION_READ_ONLY))
                         : chatService.requireFriendsInDirect(conversation, userId).thenReturn(conversation))
                 .flatMap(conversation -> callRepository.findLive(conversationId)
                         .switchIfEmpty(Mono.defer(() -> callRepository
@@ -102,7 +102,7 @@ public class CallService {
     /** The live call of a conversation the caller belongs to; empty when there is none. */
     public Mono<Call> liveCall(String userId, String conversationId) {
         return chatRepository.findById(conversationId, userId)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(conversation -> callRepository.findLive(conversationId));
     }
 
@@ -113,7 +113,7 @@ public class CallService {
                 .flatMap(call -> {
                     boolean alreadyIn = call.participant(userId).isPresent();
                     if (!alreadyIn && call.participants().size() >= maxParticipants) {
-                        return Mono.error(new ChatException(ChatErrorCode.CALL_FULL));
+                        return Mono.error(new BusinessException(BusinessErrorCode.CALL_FULL));
                     }
                     return mediaRelay.newSession()
                             .flatMap(sessionId -> callRepository
@@ -134,7 +134,7 @@ public class CallService {
                 .flatMap(entry -> mediaRelay.publish(entry.participant().sessionId(), offer, tracks)
                         .flatMap(answer -> callRepository
                                 .addTracks(callId, userId, tracks.stream().map(LocalTrack::trackName).toList())
-                                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CALL_NOT_FOUND)))
+                                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)))
                                 .flatMap(call -> notify(call, CallEventType.TRACKS_PUBLISHED, userId,
                                         call.participantIdsExcept(userId)))
                                 .thenReturn(answer)));
@@ -184,7 +184,7 @@ public class CallService {
     /** Keeps the caller in the call; one who stops sending heartbeats is dropped. */
     public Mono<Void> heartbeat(String userId, String callId) {
         return callRepository.touch(callId, userId, clock.instant())
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CALL_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)))
                 .then();
     }
 
@@ -300,7 +300,7 @@ public class CallService {
                 // Membership is checked again on the conversation: someone who left an event since
                 // the call started is no longer let in.
                 .filterWhen(call -> chatRepository.findById(call.conversationId(), userId).hasElement())
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CALL_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)));
     }
 
     private Mono<Participation> participantIn(String userId, String callId) {
@@ -308,7 +308,7 @@ public class CallService {
                 .filter(Call::isLive)
                 .flatMap(call -> Mono.justOrEmpty(call.participant(userId))
                         .map(participant -> new Participation(call, participant)))
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CALL_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)));
     }
 
     /** The relay session a track is published on, if it really is published in this call. */
@@ -316,15 +316,15 @@ public class CallService {
         return call.participant(publisherId)
                 .filter(publisher -> publisher.publishes(trackName))
                 .map(CallParticipant::sessionId)
-                .orElseThrow(() -> new ChatException(ChatErrorCode.CALL_TRACK_DENIED));
+                .orElseThrow(() -> new BusinessException(BusinessErrorCode.CALL_TRACK_DENIED));
     }
 
     /** addParticipant found no room: the call ended meanwhile, or filled up. */
     private Mono<Call> whyNotJoined(String userId, String callId) {
         return callRepository.findById(callId, userId)
                 .filter(Call::isLive)
-                .flatMap(call -> Mono.<Call>error(new ChatException(ChatErrorCode.CALL_FULL)))
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CALL_NOT_FOUND)));
+                .flatMap(call -> Mono.<Call>error(new BusinessException(BusinessErrorCode.CALL_FULL)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)));
     }
 
     private Mono<Call> activateOnceAnswered(Call call) {

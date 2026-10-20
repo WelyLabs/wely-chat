@@ -1,7 +1,8 @@
 package com.calendar.chat.infrastructure.reconciliation;
 
 import com.calendar.chat.domain.services.AccountReconciliationService;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -79,9 +80,12 @@ public class DeletedUsersReconciliationLoop implements SmartLifecycle {
                 })
                 .switchIfEmpty(Mono.error(() -> new IllegalStateException("Reconciliation pass completed empty")))
                 .onErrorResume(error -> {
-                    if (error instanceof ChatException chat) {
+                    if (error instanceof TechnicalException technical) {
                         log.warn("Deleted-users reconciliation failed; next pass in {}: {} {}", retryInterval,
-                                chat.getErrorCode().getCode(), chat.getMessage());
+                                technical.getErrorCode().getCode(), technical.getMessage());
+                    } else if (error instanceof BusinessException business) {
+                        log.warn("Deleted-users reconciliation failed; next pass in {}: {} {}", retryInterval,
+                                business.getErrorCode().getCode(), business.getMessage());
                     } else {
                         log.warn("Deleted-users reconciliation failed; next pass in {}", retryInterval, error);
                     }

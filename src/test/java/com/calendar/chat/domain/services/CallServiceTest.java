@@ -26,8 +26,10 @@ import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.IceServerProvider;
 import com.calendar.chat.domain.ports.MediaRelay;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -192,8 +194,8 @@ class CallServiceTest {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.start("mallory", "Mallory", "conv-1", CallMedia.AUDIO))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CONVERSATION_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CONVERSATION_NOT_FOUND));
 
         verifyNoInteractions(callRepository);
     }
@@ -203,8 +205,8 @@ class CallServiceTest {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.ACCOUNT_DELETED));
 
         verifyNoInteractions(chatRepository, callRepository, callBroadcaster);
     }
@@ -216,8 +218,8 @@ class CallServiceTest {
         when(chatRepository.findById("conv-1", "alice")).thenReturn(Mono.just(readOnly));
 
         StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CONVERSATION_READ_ONLY));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CONVERSATION_READ_ONLY));
 
         verifyNoInteractions(callRepository, callBroadcaster);
     }
@@ -229,11 +231,11 @@ class CallServiceTest {
                 List.of(), 0, null, null);
         when(chatRepository.findById("conv-1", "alice")).thenReturn(Mono.just(direct));
         when(chatService.requireFriendsInDirect(direct, "alice"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.FRIENDSHIP_REQUIRED)));
 
         StepVerifier.create(service.start("alice", "Alice", "conv-1", CallMedia.AUDIO))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.FRIENDSHIP_REQUIRED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.FRIENDSHIP_REQUIRED));
 
         verifyNoInteractions(callRepository, callBroadcaster);
     }
@@ -254,8 +256,8 @@ class CallServiceTest {
         when(chatRepository.findById("conv-1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.liveCall("mallory", "conv-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CONVERSATION_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CONVERSATION_NOT_FOUND));
 
         verifyNoInteractions(callRepository);
     }
@@ -290,8 +292,8 @@ class CallServiceTest {
         when(markers.isDeleted("bob")).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.join("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.ACCOUNT_DELETED));
 
         verifyNoInteractions(callRepository, mediaRelay, callBroadcaster);
     }
@@ -321,8 +323,8 @@ class CallServiceTest {
         memberOfConversation("dan");
 
         StepVerifier.create(service.join("dan", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_FULL));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_FULL));
 
         verifyNoInteractions(mediaRelay);
     }
@@ -351,8 +353,8 @@ class CallServiceTest {
         when(callRepository.addParticipant(eq("call-1"), any(), anyInt())).thenReturn(Mono.empty());
 
         StepVerifier.create(service.join("dan", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_FULL));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_FULL));
     }
 
     @Test
@@ -365,8 +367,8 @@ class CallServiceTest {
         when(callRepository.addParticipant(eq("call-1"), any(), anyInt())).thenReturn(Mono.empty());
 
         StepVerifier.create(service.join("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     @Test
@@ -374,8 +376,8 @@ class CallServiceTest {
         when(callRepository.findById("call-1", "bob")).thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"))));
 
         StepVerifier.create(service.join("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     @Test
@@ -385,8 +387,8 @@ class CallServiceTest {
         when(chatRepository.findById("conv-1", "carol")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.join("carol", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
 
         verifyNoInteractions(mediaRelay);
     }
@@ -396,8 +398,8 @@ class CallServiceTest {
         when(callRepository.findById("call-1", "mallory")).thenReturn(Mono.empty());
 
         StepVerifier.create(service.join("mallory", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     // --- publish -------------------------------------------------------------------------
@@ -425,8 +427,8 @@ class CallServiceTest {
                 .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "carol"), in("alice"))));
 
         StepVerifier.create(service.publish("carol", "call-1", new SessionDescription("offer", "x"), List.of()))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
 
         verifyNoInteractions(mediaRelay);
     }
@@ -461,8 +463,8 @@ class CallServiceTest {
         when(callRepository.findById("call-1", "bob")).thenReturn(Mono.just(active));
 
         StepVerifier.create(service.subscribe("bob", "call-1", List.of(new TrackRequest("alice", "camera", null))))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_TRACK_DENIED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_TRACK_DENIED));
 
         verifyNoInteractions(mediaRelay);
     }
@@ -473,8 +475,8 @@ class CallServiceTest {
         when(callRepository.findById("call-1", "bob")).thenReturn(Mono.just(active));
 
         StepVerifier.create(service.subscribe("bob", "call-1", List.of(new TrackRequest("eve", "audio", null))))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_TRACK_DENIED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_TRACK_DENIED));
     }
 
     // --- renegotiate, layers, unsubscribe ------------------------------------------------
@@ -497,8 +499,8 @@ class CallServiceTest {
                 .thenReturn(Mono.just(call(CallStatus.ENDED, List.of("alice", "bob"), in("bob"))));
 
         StepVerifier.create(service.renegotiate("bob", "call-1", SessionDescription.answer("v=0")))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     @Test
@@ -521,8 +523,8 @@ class CallServiceTest {
 
         StepVerifier.create(service.chooseLayers("bob", "call-1",
                         List.of(new LayerChoice("3", "alice", "camera", VideoLayer.FULL))))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_TRACK_DENIED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_TRACK_DENIED));
     }
 
     @Test
@@ -542,8 +544,8 @@ class CallServiceTest {
                 .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "carol"), in("alice"))));
 
         StepVerifier.create(service.unsubscribe("carol", "call-1", List.of("3")))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     // --- heartbeat -----------------------------------------------------------------------
@@ -560,8 +562,8 @@ class CallServiceTest {
         when(callRepository.touch("call-1", "bob", NOW)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.heartbeat("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     // --- leave ---------------------------------------------------------------------------
@@ -659,11 +661,11 @@ class CallServiceTest {
         when(callRepository.findLiveInvolving("bob")).thenReturn(Flux.just(
                 call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob"))));
         when(callRepository.removeParticipant("call-1", "bob"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(service.removeUser("bob"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.STORE_UNAVAILABLE));
+                .verifyErrorSatisfies(error -> assertThat(((TechnicalException) error).getErrorCode())
+                        .isEqualTo(TechnicalErrorCode.STORE_UNAVAILABLE));
 
         verifyNoInteractions(mediaRelay);
         verify(callRepository, never()).removeFromEndedCalls(anyString());
@@ -673,7 +675,7 @@ class CallServiceTest {
     void removeUser_shouldStillLeave_whenTheRelayCannotBeReached() {
         bobIsIn(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob")));
         when(mediaRelay.closeSession("session-bob"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CALLS_UNAVAILABLE)));
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.CALLS_UNAVAILABLE)));
         when(callRepository.removeParticipant("call-1", "bob"))
                 .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"))));
 
@@ -799,9 +801,9 @@ class CallServiceTest {
     @Test
     void removeUser_shouldFail_whenTheCallsCannotBeRead() {
         when(callRepository.findLiveInvolving("bob"))
-                .thenReturn(Flux.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                .thenReturn(Flux.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
-        StepVerifier.create(service.removeUser("bob")).expectError(ChatException.class).verify();
+        StepVerifier.create(service.removeUser("bob")).expectError(TechnicalException.class).verify();
 
         verify(callRepository, never()).removeFromEndedCalls(anyString());
     }
@@ -839,8 +841,8 @@ class CallServiceTest {
         when(markers.isDeleted("bob")).thenReturn(Mono.just(true));
 
         StepVerifier.create(service.decline("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.ACCOUNT_DELETED));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.ACCOUNT_DELETED));
 
         verifyNoInteractions(callRepository, chatRepository, callBroadcaster, chatService);
     }
@@ -850,8 +852,8 @@ class CallServiceTest {
         when(callRepository.findById("call-1", "bob")).thenReturn(Mono.just(call(CallStatus.MISSED, List.of("alice", "bob"))));
 
         StepVerifier.create(service.decline("bob", "call-1"))
-                .verifyErrorSatisfies(error -> assertThat(((ChatException) error).getErrorCode())
-                        .isEqualTo(ChatErrorCode.CALL_NOT_FOUND));
+                .verifyErrorSatisfies(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND));
     }
 
     // --- events --------------------------------------------------------------------------

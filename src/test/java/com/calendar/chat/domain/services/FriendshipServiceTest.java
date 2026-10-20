@@ -3,8 +3,10 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.models.Friendship;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.FriendshipDirectory;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,7 +44,7 @@ class FriendshipServiceTest {
     }
 
     private static boolean friendshipRequired(Throwable error) {
-        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.FRIENDSHIP_REQUIRED;
+        return error instanceof BusinessException business && business.getErrorCode() == BusinessErrorCode.FRIENDSHIP_REQUIRED;
     }
 
     @Test
@@ -108,11 +110,11 @@ class FriendshipServiceTest {
 
     @Test
     void requireFriends_shouldPassOnAStoreFailure() {
-        when(directory.areFriends(ALICE, BOB)).thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(directory.areFriends(ALICE, BOB)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(service.requireFriends(ALICE, BOB))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
     }
 

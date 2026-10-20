@@ -2,8 +2,8 @@ package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.models.Friendship;
 import com.calendar.chat.domain.ports.FriendshipDirectory;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -33,12 +33,12 @@ public class FriendshipService {
     /** Completes when the two are friends; fails with FRIENDSHIP_REQUIRED otherwise, oneself included. */
     public Mono<Void> requireFriends(String userId, String otherId) {
         if (userId == null || otherId == null || userId.equals(otherId)) {
-            return Mono.error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED));
+            return Mono.error(new BusinessException(BusinessErrorCode.FRIENDSHIP_REQUIRED));
         }
         return directory.areFriends(userId, otherId)
                 .flatMap(friends -> friends
                         ? Mono.<Void>empty()
-                        : Mono.<Void>error(new ChatException(ChatErrorCode.FRIENDSHIP_REQUIRED)));
+                        : Mono.<Void>error(new BusinessException(BusinessErrorCode.FRIENDSHIP_REQUIRED)));
     }
 
     public Mono<Void> forget(String userId) {

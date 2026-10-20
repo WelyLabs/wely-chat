@@ -5,8 +5,8 @@ import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.services.ChatService;
 import com.calendar.chat.domain.services.PhotoService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -49,7 +49,7 @@ public class ConversationController {
                 .map(ResponseEntity::ok)
                 // An empty 404 tells a client nothing: an RFC 7807 response carries a
                 // stable code it can branch on.
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.MESSAGE_PAGE_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.MESSAGE_PAGE_NOT_FOUND)));
     }
 
     @GetMapping("{conversationId}")
@@ -61,7 +61,7 @@ public class ConversationController {
         return chatService.readConversationById(conversationId, userId)
                 .flatMap(photoService::signed)
                 .map(ResponseEntity::ok)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)));
     }
 
     /** The group of an event the caller takes part in; 404 otherwise, or before it is created. */
@@ -74,7 +74,7 @@ public class ConversationController {
         return chatService.readEventConversation(eventId, userId)
                 .flatMap(photoService::signed)
                 .map(ResponseEntity::ok)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)));
     }
 
     @GetMapping("all")

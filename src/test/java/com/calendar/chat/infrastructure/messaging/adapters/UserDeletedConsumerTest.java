@@ -4,8 +4,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.calendar.chat.domain.services.AccountErasureService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -128,7 +130,7 @@ class UserDeletedConsumerTest {
     void userDeleted_shouldRetryAFailedErasure_thenSucceed() {
         AtomicInteger attempts = new AtomicInteger();
         when(erasure.erase(USER, DELETED_AT)).thenReturn(Mono.defer(() -> attempts.incrementAndGet() < 3
-                ? Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE))
+                ? Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE))
                 : Mono.empty()));
 
         StepVerifier.withVirtualTime(() -> consumer.userDeleted().apply(Flux.just(deletionOf(USER))))
@@ -144,7 +146,7 @@ class UserDeletedConsumerTest {
         AtomicInteger attempts = new AtomicInteger();
         when(erasure.erase(USER, DELETED_AT)).thenReturn(Mono.defer(() -> {
             attempts.incrementAndGet();
-            return Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE));
+            return Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE));
         }));
         when(erasure.erase(OTHER, DELETED_AT)).thenReturn(Mono.empty());
 
@@ -159,6 +161,19 @@ class UserDeletedConsumerTest {
                 .singleElement().asString()
                 .contains(USER, "CHT-TEC-004")
                 .doesNotContain("Retries exhausted");
+    }
+
+    @Test
+    void userDeleted_shouldLogTheBusinessCode_whenErasureIsRefused() {
+        when(erasure.erase(USER, DELETED_AT)).thenReturn(Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
+
+        StepVerifier.withVirtualTime(() -> consumer.userDeleted().apply(Flux.just(deletionOf(USER))))
+                .thenAwait(Duration.ofMinutes(10))
+                .verifyComplete();
+
+        assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
+                .singleElement().asString()
+                .contains(USER, "CHT-BUS-011");
     }
 
     @Test

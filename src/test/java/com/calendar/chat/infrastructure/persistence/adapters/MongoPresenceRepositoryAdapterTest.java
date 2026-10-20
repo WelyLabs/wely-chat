@@ -1,8 +1,8 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.Presence;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.persistence.models.entities.LastSeenEntity;
 import com.calendar.chat.infrastructure.persistence.models.entities.PresenceConnectionEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.LastSeenRepository;
@@ -126,8 +126,8 @@ class MongoPresenceRepositoryAdapterTest {
                 .thenReturn(Mono.error(new DataAccessResourceFailureException("mongo down")));
 
         StepVerifier.create(adapter.forget("alice"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
         verify(lastSeenRepository, never()).deleteById(any(String.class));
     }

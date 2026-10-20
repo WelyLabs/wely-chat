@@ -1,7 +1,8 @@
 package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.services.AccountErasureService;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.messaging.models.UserDeletedEventDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -65,10 +66,13 @@ public class UserDeletedConsumer {
                 });
     }
 
-    /** A domain failure names its code, such as CHT-TEC-004; anything else its type and message. */
+    /** A business or technical failure names its code, such as CHT-TEC-004; anything else its type and message. */
     private static String reason(Throwable error) {
-        return error instanceof ChatException chat
-                ? chat.getErrorCode().getCode() + " " + chat.getMessage()
+        if (error instanceof TechnicalException technical) {
+            return technical.getErrorCode().getCode() + " " + technical.getMessage();
+        }
+        return error instanceof BusinessException business
+                ? business.getErrorCode().getCode() + " " + business.getMessage()
                 : error.toString();
     }
 }

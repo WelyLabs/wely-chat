@@ -22,8 +22,8 @@ import com.calendar.chat.domain.models.SessionDescription;
 import com.calendar.chat.domain.models.TrackRequest;
 import com.calendar.chat.domain.models.VideoLayer;
 import com.calendar.chat.domain.services.CallService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -111,22 +111,22 @@ class CallControllerTest {
     @Test
     void start_shouldFailWithAccountDeleted_whenTheCallerIsDeleted() {
         when(callService.start("bob", "Bob", "conv-1", CallMedia.AUDIO))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
     }
 
     @Test
     void start_shouldFailWithReadOnly_whenTheConversationIsReadOnly() {
         when(callService.start("bob", "Bob", "conv-1", CallMedia.AUDIO))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_READ_ONLY)));
 
         StepVerifier.create(controller.start(jwt, new StartCallRequest("conv-1", "AUDIO")))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_READ_ONLY)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_READ_ONLY)
                 .verify();
     }
 

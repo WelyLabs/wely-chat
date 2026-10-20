@@ -2,8 +2,8 @@ package com.calendar.chat.infrastructure.users.adapters;
 
 import com.calendar.chat.domain.models.DeletedUsersPage;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.users.mappers.DeletedUsersMapper;
 import com.calendar.chat.infrastructure.users.models.DeletedUsersPageResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +42,7 @@ public class UsersApiDeletedUsersAdapter implements DeletedUsersSource {
     public Mono<DeletedUsersPage> page(String after, int limit) {
         if (!configured) {
             log.warn("Deleted accounts not listed: USERS_API_URL or DELETED_USERS_READER_SECRET is not set");
-            return Mono.error(new ChatException(ChatErrorCode.USERS_UNAVAILABLE));
+            return Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE));
         }
         return Mono.defer(() -> client.get()
                         .uri(uri -> {
@@ -61,12 +61,12 @@ public class UsersApiDeletedUsersAdapter implements DeletedUsersSource {
     }
 
     // The error names the status and the URL, never the secret header.
-    private static ChatException unavailable(Throwable error) {
+    private static TechnicalException unavailable(Throwable error) {
         log.warn("Deleted accounts not listed from wely-users: {}", error.toString());
-        return new ChatException(ChatErrorCode.USERS_UNAVAILABLE);
+        return new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE, error);
     }
 
     private static boolean isUnexpected(Throwable error) {
-        return !(error instanceof ChatException);
+        return !(error instanceof TechnicalException);
     }
 }

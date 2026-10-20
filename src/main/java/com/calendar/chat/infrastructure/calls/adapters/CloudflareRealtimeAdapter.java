@@ -5,8 +5,8 @@ import com.calendar.chat.domain.models.RelaySubscription;
 import com.calendar.chat.domain.models.RemoteTrack;
 import com.calendar.chat.domain.models.SessionDescription;
 import com.calendar.chat.domain.ports.MediaRelay;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.calls.mappers.RealtimeMapper;
 import com.calendar.chat.infrastructure.calls.models.RealtimeCloseRequest;
 import com.calendar.chat.infrastructure.calls.models.RealtimeRenegotiateRequest;
@@ -140,9 +140,9 @@ public class CloudflareRealtimeAdapter implements MediaRelay {
                     }
                     return Mono.just(response);
                 })
-                .onErrorMap(error -> !(error instanceof ChatException), error -> {
+                .onErrorMap(error -> !(error instanceof TechnicalException), error -> {
                     log.warn("Cloudflare Realtime unreachable on {}: {}", path, error.toString());
-                    return unavailable();
+                    return unavailable(error);
                 });
     }
 
@@ -154,7 +154,11 @@ public class CloudflareRealtimeAdapter implements MediaRelay {
         return true;
     }
 
-    private static ChatException unavailable() {
-        return new ChatException(ChatErrorCode.CALLS_UNAVAILABLE);
+    private static TechnicalException unavailable() {
+        return new TechnicalException(TechnicalErrorCode.CALLS_UNAVAILABLE);
+    }
+
+    private static TechnicalException unavailable(Throwable cause) {
+        return new TechnicalException(TechnicalErrorCode.CALLS_UNAVAILABLE, cause);
     }
 }

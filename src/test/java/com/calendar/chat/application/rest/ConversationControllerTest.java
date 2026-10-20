@@ -7,8 +7,8 @@ import com.calendar.chat.domain.models.ConversationDetail;
 import com.calendar.chat.domain.models.ConversationSummary;
 import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.services.ChatService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -73,11 +73,11 @@ class ConversationControllerTest {
     void getConversation_shouldFailWithAccountDeleted_whenTheCallerIsDeleted() {
         givenAuthenticatedCaller();
         when(chatService.readOrCreateConversation(CALLER_ID, "friend-1"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.getConversation(jwt, "friend-1"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
     }
 
@@ -85,11 +85,11 @@ class ConversationControllerTest {
     void getConversation_shouldFailAsNotFound_whenTheFriendIsDeletedAndNoConversationExists() {
         givenAuthenticatedCaller();
         when(chatService.readOrCreateConversation(CALLER_ID, "gone"))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+                .thenReturn(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)));
 
         StepVerifier.create(controller.getConversation(jwt, "gone"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
     }
 
@@ -117,9 +117,9 @@ class ConversationControllerTest {
         when(chatService.readPreviousMessages(CONVERSATION_ID, 2, CALLER_ID)).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.readPreviousMessages(jwt, CONVERSATION_ID, 2))
-                .expectErrorMatches(error -> error instanceof ChatException
-                        && ((ChatException) error).getErrorCode()
-                                == ChatErrorCode.MESSAGE_PAGE_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException
+                        && ((BusinessException) error).getErrorCode()
+                                == BusinessErrorCode.MESSAGE_PAGE_NOT_FOUND)
                 .verify();
     }
 
@@ -161,9 +161,9 @@ class ConversationControllerTest {
         // A distinct code for "not yours" would let anyone enumerate existing
         // conversations: both cases deliberately share CHT-BUS-001.
         StepVerifier.create(controller.getConversationById(jwt, CONVERSATION_ID))
-                .expectErrorMatches(error -> error instanceof ChatException
-                        && ((ChatException) error).getErrorCode()
-                                == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException
+                        && ((BusinessException) error).getErrorCode()
+                                == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
     }
 
@@ -187,8 +187,8 @@ class ConversationControllerTest {
         when(chatService.readEventConversation("event-1", CALLER_ID)).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.getEventConversation(jwt, "event-1"))
-                .expectErrorMatches(error -> error instanceof ChatException
-                        && ((ChatException) error).getErrorCode() == ChatErrorCode.CONVERSATION_NOT_FOUND)
+                .expectErrorMatches(error -> error instanceof BusinessException
+                        && ((BusinessException) error).getErrorCode() == BusinessErrorCode.CONVERSATION_NOT_FOUND)
                 .verify();
     }
 

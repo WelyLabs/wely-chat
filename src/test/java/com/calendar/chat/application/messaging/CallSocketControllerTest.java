@@ -7,8 +7,8 @@ import com.calendar.chat.domain.models.CallEventType;
 import com.calendar.chat.domain.models.CallMedia;
 import com.calendar.chat.domain.services.CallService;
 import com.calendar.chat.domain.services.LiveSessions;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mapstruct.factory.Mappers;
@@ -58,11 +58,11 @@ class CallSocketControllerTest {
     @Test
     void streamEvents_shouldFail_whenLiveSessionsRefusesTheCaller() {
         when(callService.streamEvents("bob")).thenReturn(Flux.never());
-        when(liveSessions.attach(eq("bob"), any())).thenReturn(Flux.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED)));
+        when(liveSessions.attach(eq("bob"), any())).thenReturn(Flux.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED)));
 
         StepVerifier.create(controller.streamEvents(jwt))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
     }
 }

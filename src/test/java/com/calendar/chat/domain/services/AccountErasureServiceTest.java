@@ -3,8 +3,8 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.PresenceRepository;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -102,11 +102,11 @@ class AccountErasureServiceTest {
     @Test
     void erase_shouldNotMarkErased_whenAStepFails() {
         everyStepSucceeds();
-        when(chatRepository.anonymizeSender(USER)).thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(chatRepository.anonymizeSender(USER)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(service.erase(USER, DELETED_AT))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
 
         verify(chatRepository, never()).markDirectConversationsReadOnly(any());
@@ -119,9 +119,9 @@ class AccountErasureServiceTest {
     @Test
     void erase_shouldFailWithoutTouchingData_whenTheMarkerCannotBeWritten() {
         when(markers.markDeleted(USER, DELETED_AT))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
-        StepVerifier.create(service.erase(USER, DELETED_AT)).expectError(ChatException.class).verify();
+        StepVerifier.create(service.erase(USER, DELETED_AT)).expectError(TechnicalException.class).verify();
 
         verifyNoInteractions(liveSessions, chatRepository, callService, presenceRepository, friendships);
         verify(markers, never()).markErased(any(), any());

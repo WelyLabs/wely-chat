@@ -1,8 +1,10 @@
 package com.calendar.chat.domain.services;
 
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -40,18 +42,18 @@ class AccountGuardTest {
         when(markers.isDeleted("alice")).thenReturn(Mono.just(true));
 
         StepVerifier.create(guard().requireActive("alice"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.ACCOUNT_DELETED)
+                .expectErrorMatches(error -> error instanceof BusinessException business
+                        && business.getErrorCode() == BusinessErrorCode.ACCOUNT_DELETED)
                 .verify();
     }
 
     @Test
     void requireActive_shouldPropagateAStoreFailure() {
-        when(markers.isDeleted("alice")).thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(markers.isDeleted("alice")).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(guard().requireActive("alice"))
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
     }
 

@@ -3,8 +3,8 @@ package com.calendar.chat.infrastructure.users.adapters;
 import com.calendar.chat.configuration.UsersApiClientConfig;
 import com.calendar.chat.domain.models.DeletedUser;
 import com.calendar.chat.domain.models.DeletedUsersPage;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.users.mappers.DeletedUsersMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,7 +68,7 @@ class UsersApiDeletedUsersAdapterTest {
     }
 
     private static boolean usersUnavailable(Throwable error) {
-        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.USERS_UNAVAILABLE;
+        return error instanceof TechnicalException technical && technical.getErrorCode() == TechnicalErrorCode.USERS_UNAVAILABLE;
     }
 
     @Test
@@ -191,11 +191,31 @@ class UsersApiDeletedUsersAdapterTest {
 
     @Test
     void page_shouldFailWithUsersUnavailable_whenWelyUsersCannotBeReached() {
-        answer = () -> Mono.error(new IOException("Connection refused"));
+        IOException refused = new IOException("Connection refused");
+        answer = () -> Mono.error(refused);
 
         StepVerifier.create(adapter().page(null, 500))
-                .expectErrorMatches(UsersApiDeletedUsersAdapterTest::usersUnavailable)
-                .verify();
+                .verifyErrorSatisfies(error -> {
+                    assertThat(usersUnavailable(error)).isTrue();
+                    // Kept as the cause, so the ERROR log shows why wely-users could not be read.
+                    assertThat(error).hasRootCause(refused);
+                });
+    }
+
+    @Test
+    void page_shouldKeepTheMissingItemsAsTheCause() {
+        answer = () -> Mono.just(json(HttpStatus.OK, "{}"));
+
+        StepVerifier.create(adapter().page(null, 500))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause())
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessage("wely-users answered without items"));
+    }
+
+    @Test
+    void page_shouldCarryNoCause_whenNotConfigured() {
+        StepVerifier.create(adapter("", SECRET).page(null, 500))
+                .verifyErrorSatisfies(error -> assertThat(error.getCause()).isNull());
     }
 
     @Test

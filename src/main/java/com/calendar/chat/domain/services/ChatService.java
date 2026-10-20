@@ -10,8 +10,8 @@ import com.calendar.chat.domain.models.MessageBucket;
 import com.calendar.chat.domain.models.PostedMessage;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.MessageBroadcaster;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -48,11 +48,11 @@ public class ChatService {
         return guard.deletedAmong(participantIds)
                 .flatMap(deleted -> {
                     if (deleted.contains(requesterId)) {
-                        return Mono.error(new ChatException(ChatErrorCode.ACCOUNT_DELETED));
+                        return Mono.error(new BusinessException(BusinessErrorCode.ACCOUNT_DELETED));
                     }
                     Mono<ConversationDetail> existing = chatRepository.findByParticipantIds(participantIds);
                     return deleted.contains(friendId)
-                            ? existing.switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                            ? existing.switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                             : existing.switchIfEmpty(Mono.defer(() -> friendships.requireFriends(requesterId, friendId)
                                     .then(Mono.defer(() -> chatRepository.saveWithInitialBucket(participantIds)))));
                 });
@@ -67,12 +67,12 @@ public class ChatService {
         // A deleted sender, or a conversation made read-only by a deleted participant, writes nothing.
         return guard.requireActive(message.senderId())
                 .then(Mono.defer(() -> chatRepository.findMembership(message.conversationId(), message.senderId())))
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(conversation -> conversation.isReadOnly()
-                        ? Mono.<List<String>>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        ? Mono.<List<String>>error(new BusinessException(BusinessErrorCode.CONVERSATION_READ_ONLY))
                         : requireFriendsInDirect(conversation, message.senderId())
                                 .then(Mono.defer(() -> chatRepository.postMessage(message))))
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 // Recipients come from the stored conversation, never from the client's receiverId.
                 .flatMapMany(memberIds -> liveRecipients(message, memberIds, message.senderId()))
                 .concatMap(recipientId -> messageBroadcaster.broadcast(
@@ -118,7 +118,7 @@ public class ChatService {
     public Mono<Message> postSystemNotice(String eventId, String content) {
         Message notice = Message.system(noticeId(eventId, content), content, clock.instant());
         return chatRepository.postSystemMessage(eventId, notice)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(posted -> posted.duplicate()
                         ? Mono.just(posted.message())
                         : pushToMembers(posted).thenReturn(posted.message()));
@@ -131,7 +131,7 @@ public class ChatService {
     public Mono<Message> postConversationNotice(String conversationId, String noticeKey, String content) {
         Message notice = Message.system(noticeId(conversationId, noticeKey), content, clock.instant());
         return chatRepository.postSystemMessageToConversation(conversationId, notice)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)))
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)))
                 .flatMap(posted -> posted.duplicate()
                         ? Mono.just(posted.message())
                         : pushToMembers(posted).thenReturn(posted.message()));

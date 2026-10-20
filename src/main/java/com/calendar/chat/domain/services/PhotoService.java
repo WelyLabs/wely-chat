@@ -10,8 +10,8 @@ import com.calendar.chat.domain.models.Photo;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.ConversationPhotoRepository;
 import com.calendar.chat.domain.ports.MediaStore;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -64,7 +64,7 @@ public class PhotoService {
         return guard.requireActive(senderId)
                 .then(Mono.defer(() -> requireMember(conversationId, senderId)))
                 .flatMap(conversation -> conversation.isReadOnly()
-                        ? Mono.<ConversationDetail>error(new ChatException(ChatErrorCode.CONVERSATION_READ_ONLY))
+                        ? Mono.<ConversationDetail>error(new BusinessException(BusinessErrorCode.CONVERSATION_READ_ONLY))
                         : chatService.requireFriendsInDirect(conversation, senderId).thenReturn(conversation))
                 // Deferred: built eagerly, an outsider's upload would be sent to wely-media before membership was checked.
                 .then(Mono.defer(() -> {
@@ -104,10 +104,10 @@ public class PhotoService {
         return guard.requireActive(requesterId)
                 .then(Mono.defer(() -> requireMember(conversationId, requesterId)))
                 .flatMap(conversation -> photoRepository.find(conversationId, messageId)
-                        .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.PHOTO_NOT_FOUND)))
+                        .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.PHOTO_NOT_FOUND)))
                         .flatMap(photo -> conversation.mayRemovePhotoOf(photo.senderId(), requesterId)
                                 ? Mono.just(photo)
-                                : Mono.error(new ChatException(ChatErrorCode.PHOTO_REMOVAL_DENIED))))
+                                : Mono.error(new BusinessException(BusinessErrorCode.PHOTO_REMOVAL_DENIED))))
                 .flatMap(photo -> chatRepository.markPhotoRemoved(conversationId, messageId)
                         .then(Mono.defer(() -> photoRepository.delete(conversationId, messageId)))
                         .then(Mono.defer(() -> mediaStore.delete(photo.photo().key()).onErrorResume(error -> Mono.empty())))
@@ -197,7 +197,7 @@ public class PhotoService {
     /** Not a member, or no such conversation: both answer as missing. */
     private Mono<ConversationDetail> requireMember(String conversationId, String userId) {
         return chatRepository.findById(conversationId, userId)
-                .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.CONVERSATION_NOT_FOUND)));
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CONVERSATION_NOT_FOUND)));
     }
 
     /**

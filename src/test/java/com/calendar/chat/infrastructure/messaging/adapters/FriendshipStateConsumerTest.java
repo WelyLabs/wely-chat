@@ -2,8 +2,8 @@ package com.calendar.chat.infrastructure.messaging.adapters;
 
 import com.calendar.chat.domain.models.Friendship;
 import com.calendar.chat.domain.services.FriendshipService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.messaging.models.FriendshipStateDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -122,7 +122,7 @@ class FriendshipStateConsumerTest {
     void friendshipState_shouldRetryAFailedWrite_thenSucceed() {
         AtomicInteger attempts = new AtomicInteger();
         when(friendshipService.applyState(any())).thenReturn(Mono.defer(() -> attempts.incrementAndGet() < 3
-                ? Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE))
+                ? Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE))
                 : Mono.just(true)));
 
         StepVerifier.withVirtualTime(() -> consumer.friendshipState().apply(Flux.just(friends(2))))
@@ -136,7 +136,7 @@ class FriendshipStateConsumerTest {
     @DisplayName("a write that keeps failing is skipped, not fatal: the stream goes on")
     void friendshipState_shouldSkipTheRecord_whenRetriesAreExhausted() {
         when(friendshipService.applyState(any()))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
         when(friendshipService.applyTombstone(anyString(), anyString())).thenReturn(Mono.just(true));
 
         StepVerifier.withVirtualTime(() -> consumer.friendshipState().apply(Flux.just(friends(2), tombstone(KEY))))

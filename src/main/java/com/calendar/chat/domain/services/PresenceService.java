@@ -3,8 +3,8 @@ package com.calendar.chat.domain.services;
 import com.calendar.chat.domain.models.Presence;
 import com.calendar.chat.domain.ports.ChatRepository;
 import com.calendar.chat.domain.ports.PresenceRepository;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -84,7 +84,7 @@ public class PresenceService {
                         ? guard.isDeleted(userId).flatMap(deleted -> deleted
                                 ? Mono.just(new Presence(userId, false, null))
                                 : presenceRepository.find(userId, clock.instant().minus(ONLINE_WINDOW)))
-                        : Mono.error(new ChatException(ChatErrorCode.PRESENCE_NOT_FOUND)));
+                        : Mono.error(new BusinessException(BusinessErrorCode.PRESENCE_NOT_FOUND)));
     }
 
     /** Number of connections open on this instance. */

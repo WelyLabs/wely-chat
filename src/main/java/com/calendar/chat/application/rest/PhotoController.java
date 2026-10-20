@@ -3,8 +3,8 @@ package com.calendar.chat.application.rest;
 import com.calendar.chat.domain.models.ConversationPhoto;
 import com.calendar.chat.domain.models.Message;
 import com.calendar.chat.domain.services.PhotoService;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
 import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -62,11 +62,11 @@ public class PhotoController {
 
         return form.flatMap(parts -> {
             if (!(parts.getFirst("file") instanceof FilePart file)) {
-                return Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID));
+                return Mono.error(new BusinessException(BusinessErrorCode.PHOTO_INVALID));
             }
             String caption = parts.getFirst("caption") instanceof FormFieldPart field ? field.value() : "";
             if (caption.length() > MAX_CAPTION_LENGTH) {
-                return Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID));
+                return Mono.error(new BusinessException(BusinessErrorCode.PHOTO_INVALID));
             }
             return DataBufferUtils.join(file.content(), MAX_PHOTO_BYTES)
                     .map(buffer -> {
@@ -75,8 +75,8 @@ public class PhotoController {
                         DataBufferUtils.release(buffer);
                         return bytes;
                     })
-                    .onErrorMap(DataBufferLimitException.class, e -> new ChatException(ChatErrorCode.PHOTO_TOO_LARGE))
-                    .switchIfEmpty(Mono.error(new ChatException(ChatErrorCode.PHOTO_INVALID)))
+                    .onErrorMap(DataBufferLimitException.class, e -> new BusinessException(BusinessErrorCode.PHOTO_TOO_LARGE))
+                    .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.PHOTO_INVALID)))
                     .flatMap(bytes -> photoService.send(conversationId, senderId, senderName, bytes, caption));
         });
     }

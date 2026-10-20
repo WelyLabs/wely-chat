@@ -3,8 +3,10 @@ package com.calendar.chat.infrastructure.media.adapters;
 import com.calendar.chat.domain.models.MediaProfile;
 import com.calendar.chat.domain.models.StoredMedia;
 import com.calendar.chat.domain.ports.MediaStore;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessErrorCode;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.media.mappers.MediaMapper;
 import com.calendar.chat.infrastructure.media.models.MediaProblem;
 import com.calendar.chat.infrastructure.media.models.SignUrlsRequest;
@@ -58,10 +60,10 @@ public class MediaApiAdapter implements MediaStore {
                         .contentType(MediaType.MULTIPART_FORM_DATA)
                         .body(BodyInserters.fromMultipartData(parts.build()))
                         .retrieve()
-                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toChatException)
+                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toException)
                         .bodyToMono(StoredMediaResponse.class))
                 .map(mapper::toStoredMedia)
-                .onErrorMap(MediaApiAdapter::isUnexpected, error -> new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE));
+                .onErrorMap(MediaApiAdapter::isUnexpected, MediaApiAdapter::unavailable);
     }
 
     /** wely-media answers 204 for a missing key too, so deleting twice is not an error. */
@@ -70,10 +72,10 @@ public class MediaApiAdapter implements MediaStore {
         return Mono.defer(() -> client.delete()
                         .uri(uri -> uri.path(MEDIA_PATH).queryParam("key", "{key}").build(key))
                         .retrieve()
-                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toChatException)
+                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toException)
                         .toBodilessEntity()
                         .then())
-                .onErrorMap(MediaApiAdapter::isUnexpected, error -> new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE));
+                .onErrorMap(MediaApiAdapter::isUnexpected, MediaApiAdapter::unavailable);
     }
 
     /** One call: the caller keeps to 200 keys. */
@@ -84,31 +86,39 @@ public class MediaApiAdapter implements MediaStore {
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(new SignUrlsRequest(keys, URL_TTL_SECONDS))
                         .retrieve()
-                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toChatException)
+                        .onStatus(HttpStatusCode::isError, MediaApiAdapter::toException)
                         .bodyToMono(SignedUrlsResponse.class))
                 .map(response -> response.urls() == null ? Map.<String, String>of() : response.urls())
                 .defaultIfEmpty(Map.of())
-                .onErrorMap(MediaApiAdapter::isUnexpected, error -> new ChatException(ChatErrorCode.MEDIA_UNAVAILABLE));
+                .onErrorMap(MediaApiAdapter::isUnexpected, MediaApiAdapter::unavailable);
     }
 
     /** wely-media's code decides: a refused image is the client's fault, the rest is ours. */
-    private static Mono<ChatException> toChatException(ClientResponse response) {
+    private static Mono<RuntimeException> toException(ClientResponse response) {
         return response.bodyToMono(MediaProblem.class)
-                .map(problem -> errorCodeOf(problem.code()))
-                .onErrorReturn(ChatErrorCode.MEDIA_UNAVAILABLE)
-                .defaultIfEmpty(ChatErrorCode.MEDIA_UNAVAILABLE)
-                .map(ChatException::new);
+                .map(problem -> exceptionOf(problem.code()))
+                .onErrorResume(unreadable -> Mono.just(unavailable(unreadable)))
+                .switchIfEmpty(Mono.fromSupplier(MediaApiAdapter::unavailable));
     }
 
-    static ChatErrorCode errorCodeOf(String mediaCode) {
+    static RuntimeException exceptionOf(String mediaCode) {
         return switch (mediaCode == null ? "" : mediaCode) {
-            case INVALID_IMAGE -> ChatErrorCode.PHOTO_INVALID;
-            case IMAGE_TOO_LARGE -> ChatErrorCode.PHOTO_TOO_LARGE;
-            default -> ChatErrorCode.MEDIA_UNAVAILABLE;
+            case INVALID_IMAGE -> new BusinessException(BusinessErrorCode.PHOTO_INVALID);
+            case IMAGE_TOO_LARGE -> new BusinessException(BusinessErrorCode.PHOTO_TOO_LARGE);
+            default -> unavailable();
         };
     }
 
+    private static TechnicalException unavailable() {
+        return new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE);
+    }
+
+    private static TechnicalException unavailable(Throwable cause) {
+        return new TechnicalException(TechnicalErrorCode.MEDIA_UNAVAILABLE, cause);
+    }
+
+    // Both kinds are already translated: a refused image and an unavailable wely-media pass through as they are.
     private static boolean isUnexpected(Throwable error) {
-        return !(error instanceof ChatException);
+        return !(error instanceof BusinessException || error instanceof TechnicalException);
     }
 }

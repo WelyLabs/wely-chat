@@ -1,8 +1,8 @@
 package com.calendar.chat.infrastructure.persistence.adapters;
 
 import com.calendar.chat.domain.models.Friendship;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.persistence.mappers.FriendshipPersistenceMapper;
 import com.calendar.chat.infrastructure.persistence.models.entities.FriendshipEntity;
 import com.calendar.chat.infrastructure.persistence.repositories.FriendshipMongoRepository;
@@ -45,7 +45,7 @@ class MongoFriendshipDirectoryAdapterTest {
     }
 
     private static boolean storeUnavailable(Throwable error) {
-        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE;
+        return error instanceof TechnicalException technical && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE;
     }
 
     private static DataAccessResourceFailureException mongoDown() {

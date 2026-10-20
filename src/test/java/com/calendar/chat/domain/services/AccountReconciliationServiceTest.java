@@ -5,8 +5,8 @@ import com.calendar.chat.domain.models.DeletedUsersPage;
 import com.calendar.chat.domain.models.ReconciliationReport;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -201,7 +201,7 @@ class AccountReconciliationServiceTest {
     void reconcile_shouldCountAFailedErasure_andCarryOnWithTheNextTombstone() {
         onePage(new DeletedUser("alice", LONG_AGO), new DeletedUser("bob", LONG_AGO));
         erasedHere();
-        when(erasure.erase("alice", LONG_AGO)).thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+        when(erasure.erase("alice", LONG_AGO)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
         when(erasure.erase("bob", LONG_AGO)).thenReturn(Mono.empty());
 
         StepVerifier.create(service.reconcile())
@@ -223,11 +223,11 @@ class AccountReconciliationServiceTest {
 
     @Test
     void reconcile_shouldFail_whenTheSourceIsUnavailable() {
-        when(source.page(null, PAGE_SIZE)).thenReturn(Mono.error(new ChatException(ChatErrorCode.USERS_UNAVAILABLE)));
+        when(source.page(null, PAGE_SIZE)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE)));
 
         StepVerifier.create(service.reconcile())
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.USERS_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.USERS_UNAVAILABLE)
                 .verify();
 
         verifyNoInteractions(markers, erasure);
@@ -237,11 +237,11 @@ class AccountReconciliationServiceTest {
     @DisplayName("a later page failing fails the pass; the erasures already applied stay, being idempotent")
     void reconcile_shouldFail_whenALaterPageIsUnavailable() {
         when(source.page(null, PAGE_SIZE)).thenReturn(Mono.just(page("c1", new DeletedUser("alice", LONG_AGO))));
-        when(source.page("c1", PAGE_SIZE)).thenReturn(Mono.error(new ChatException(ChatErrorCode.USERS_UNAVAILABLE)));
+        when(source.page("c1", PAGE_SIZE)).thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.USERS_UNAVAILABLE)));
         erasedHere();
         when(erasure.erase("alice", LONG_AGO)).thenReturn(Mono.empty());
 
-        StepVerifier.create(service.reconcile()).expectError(ChatException.class).verify();
+        StepVerifier.create(service.reconcile()).expectError(TechnicalException.class).verify();
 
         verify(erasure).erase("alice", LONG_AGO);
     }
@@ -250,11 +250,11 @@ class AccountReconciliationServiceTest {
     void reconcile_shouldFail_whenTheMarkersCannotBeRead() {
         onePage(new DeletedUser("alice", LONG_AGO));
         when(markers.erasedAmong(anyCollection()))
-                .thenReturn(Mono.error(new ChatException(ChatErrorCode.STORE_UNAVAILABLE)));
+                .thenReturn(Mono.error(new TechnicalException(TechnicalErrorCode.STORE_UNAVAILABLE)));
 
         StepVerifier.create(service.reconcile())
-                .expectErrorMatches(error -> error instanceof ChatException chat
-                        && chat.getErrorCode() == ChatErrorCode.STORE_UNAVAILABLE)
+                .expectErrorMatches(error -> error instanceof TechnicalException technical
+                        && technical.getErrorCode() == TechnicalErrorCode.STORE_UNAVAILABLE)
                 .verify();
 
         verifyNoInteractions(erasure);

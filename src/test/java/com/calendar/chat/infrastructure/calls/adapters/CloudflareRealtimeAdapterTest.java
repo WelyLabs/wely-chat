@@ -5,8 +5,8 @@ import com.calendar.chat.domain.models.RelaySubscription;
 import com.calendar.chat.domain.models.RemoteTrack;
 import com.calendar.chat.domain.models.SessionDescription;
 import com.calendar.chat.domain.models.VideoLayer;
-import com.calendar.chat.exception.ChatErrorCode;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.TechnicalErrorCode;
+import com.calendar.chat.exception.TechnicalException;
 import com.calendar.chat.infrastructure.calls.mappers.RealtimeMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,7 +72,7 @@ class CloudflareRealtimeAdapterTest {
     }
 
     private static boolean unavailable(Throwable error) {
-        return error instanceof ChatException chat && chat.getErrorCode() == ChatErrorCode.CALLS_UNAVAILABLE;
+        return error instanceof TechnicalException technical && technical.getErrorCode() == TechnicalErrorCode.CALLS_UNAVAILABLE;
     }
 
     @Test
@@ -219,12 +219,18 @@ class CloudflareRealtimeAdapterTest {
 
     @Test
     void anyCall_shouldFail_whenRealtimeIsUnreachable() {
+        IllegalStateException refused = new IllegalStateException("connection refused");
         WebClient broken = WebClient.builder().baseUrl(BASE)
-                .exchangeFunction(request -> Mono.error(new IllegalStateException("connection refused")))
+                .exchangeFunction(request -> Mono.error(refused))
                 .build();
         adapter = new CloudflareRealtimeAdapter(broken, "app-1", Mappers.getMapper(RealtimeMapper.class));
 
-        StepVerifier.create(adapter.newSession()).expectErrorMatches(CloudflareRealtimeAdapterTest::unavailable).verify();
+        StepVerifier.create(adapter.newSession())
+                .verifyErrorSatisfies(error -> {
+                    assertThat(unavailable(error)).isTrue();
+                    // Kept as the cause, so the ERROR log shows why Realtime could not be reached.
+                    assertThat(error).hasRootCause(refused);
+                });
     }
 
     @Test

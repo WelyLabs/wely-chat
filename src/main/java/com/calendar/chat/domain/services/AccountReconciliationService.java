@@ -5,7 +5,8 @@ import com.calendar.chat.domain.models.DeletedUsersPage;
 import com.calendar.chat.domain.models.ReconciliationReport;
 import com.calendar.chat.domain.ports.DeletedUserMarkers;
 import com.calendar.chat.domain.ports.DeletedUsersSource;
-import com.calendar.chat.exception.ChatException;
+import com.calendar.chat.exception.BusinessException;
+import com.calendar.chat.exception.TechnicalException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -94,8 +95,11 @@ public class AccountReconciliationService {
     }
 
     private static String reason(Throwable error) {
-        return error instanceof ChatException chat
-                ? chat.getErrorCode().getCode() + " " + chat.getMessage()
+        if (error instanceof TechnicalException technical) {
+            return technical.getErrorCode().getCode() + " " + technical.getMessage();
+        }
+        return error instanceof BusinessException business
+                ? business.getErrorCode().getCode() + " " + business.getMessage()
                 : error.toString();
     }
 
