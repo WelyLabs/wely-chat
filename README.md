@@ -1,5 +1,11 @@
 # wely-chat
 
+> **Les topics portent leur environnement en préfixe** (`dev.`, `prod.`) depuis le 2026-10-24 :
+> un seul broker sert tous les environnements, et le préfixe est la seule chose qui les sépare.
+> Côté service, une seule variable le porte — `TOPIC_PREFIX` — et les destinations s'écrivent
+> `${TOPIC_PREFIX}user-created`. Aucune valeur par défaut : un service incapable de nommer ses
+> topics refuse de démarrer plutôt que de rejoindre le trafic d'un autre environnement.
+
 Service de **messagerie temps réel** de la plateforme [Wely Calendar](https://github.com/WelyLabs/wely-platform).
 
 C'est le service le plus intéressant techniquement du projet : communication bidirectionnelle en RSocket, contre-pression native, et un *bucket pattern* MongoDB pour le stockage des messages.
@@ -365,7 +371,7 @@ tard par son `Mono` ou son `Flux`.
 | `CHAT_CALL_TOPIC` | Topic des événements d'appel, `CALL_EVENTS` par défaut |
 | `CLOUDFLARE_REALTIME_APP_ID` / `CLOUDFLARE_REALTIME_APP_SECRET` | Application Realtime SFU. Vides par défaut : le service démarre, les appels répondent `CHT-TEC-002` |
 | `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` | Clé TURN. Vides : STUN seul, ce qui suffit sur la plupart des réseaux |
-| `CHAT_USER_DELETED_ENABLED` | `true` by default; `false` unbinds the `USER_DELETED` consumer (see Account deletion) |
+| `CHAT_USER_DELETED_ENABLED` | `true` by default; `false` unbinds the `<env>.user-deleted` consumer (see Account deletion) |
 | `USERS_API_URL` | wely-users' in-cluster URL, read by the reconciliation (`http://localhost:8082` in the `dev` profile). Empty by default: the service starts, each pass fails with `CHT-TEC-003` |
 | `DELETED_USERS_READER_SECRET` | Reader secret of wely-users' deleted-accounts list, sent in `X-Internal-Secret`; distinct from `MEDIA_API_SECRET`. Empty by default, same effect as above |
 | `ACCOUNT_ERASURE_RECONCILIATION_ENABLED` | `true` by default; `false` stops the reconciliation loop |
@@ -401,7 +407,7 @@ serait payer cher un problème qui n'existe pas.
 
 Le binder n'est pas autorisé à créer le topic (`auto-create-topics=false`), mais le broker
 déployé dans le cluster garde le défaut de Kafka (`auto.create.topics.enable=true`) : il le crée
-au premier message, comme pour `USER_CREATED`. Rien à faire côté dev.
+au premier message, comme pour `<env>.user-created`. Rien à faire côté dev.
 
 `CHAT_BROADCAST_TOPIC` existe pour qu'un topic par environnement reste possible — l'overlay dev
 utilise `DEV_MESSAGE_BROADCAST`. C'est indispensable dès que plusieurs environnements partagent
@@ -453,7 +459,7 @@ demo reset (wely-gitops-infra) seeds them into `friendships` too.
 
 ## Account deletion
 
-wely-users publishes `USER_DELETED` (`{"userId", "deletedAt"}`) when an account is deleted. This
+wely-users publishes `<env>.user-deleted` (`{"userId", "deletedAt"}`) when an account is deleted. This
 service then erases what it holds about the account, and keeps its messages under the
 pseudonymous businessId.
 
