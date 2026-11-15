@@ -42,10 +42,6 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: 'maven'
-      # Docker 29 refuses API versions below 1.40 to 1.44; Testcontainers 1.20.4 asks for 1.32 and finds
-      # "no valid Docker environment" (AUDIT P3.12). Remove once Testcontainers is on 2.x.
-      - name: Pin the Docker API version for Testcontainers
-        run: echo "api.version=1.44" > ~/.docker-java.properties
       - name: Run Tests
         run: |
           chmod +x mvnw

@@ -40,7 +40,6 @@
 		<sonar.tests>src/test/java</sonar.tests>
 		<sonar.java.source>25</sonar.java.source>
 		<springdoc.version>3.0.1</springdoc.version>
-		<testcontainers.version>1.20.4</testcontainers.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -172,17 +171,17 @@
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>mongodb</artifactId>
+			<artifactId>testcontainers-mongodb</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>kafka</artifactId>
+			<artifactId>testcontainers-kafka</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>junit-jupiter</artifactId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
