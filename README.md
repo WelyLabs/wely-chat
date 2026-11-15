@@ -364,6 +364,8 @@ tard par son `Mono` ou son `Flux`.
 | `CHAT_BROADCAST_MODE` | `kafka` (défaut) ou `local` — voir ci-dessous |
 | `CHAT_BROADCAST_TOPIC` | Topic de diffusion, `MESSAGE_BROADCAST` par défaut |
 | `KAFKA_BOOTSTRAP_SERVER` | Broker, en mode `kafka` uniquement |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` by default; `SASL_SSL` for Confluent Cloud (dev, prod) |
+| `KAFKA_API_KEY` / `KAFKA_API_SECRET` | The Kafka cluster's API key, for `SASL_SSL` (sealed in `dev-wely-cloud`) |
 | `KAFKA_KEY` / `KAFKA_SECRET` | Identifiants SASL/PLAIN |
 | `MEDIA_API_URL` | URL de wely-media (`http://localhost:8085` en profil `dev`) |
 | `MEDIA_API_SECRET` | Secret partagé avec wely-media, envoyé dans `X-Internal-Secret`. Vide par défaut : le service démarre, l'envoi de photos répond `CHT-TEC-001` |
