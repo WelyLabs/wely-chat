@@ -407,9 +407,10 @@ de vérité : le message est déjà en base avant d'être diffusé, et un client
 recharge la conversation. Exiger des acquittements et du rejeu pour une copie qui existe déjà
 serait payer cher un problème qui n'existe pas.
 
-Le binder n'est pas autorisé à créer le topic (`auto-create-topics=false`), mais le broker
-déployé dans le cluster garde le défaut de Kafka (`auto.create.topics.enable=true`) : il le crée
-au premier message, comme pour `<env>.user-created`. Rien à faire côté dev.
+Le binder n'est pas autorisé à créer le topic (`auto-create-topics=false`). Le broker est
+**Confluent Cloud** depuis novembre 2026 : les topics et leur rétention se créent dans sa console,
+et non plus par un Job du dépôt GitOps. Un topic absent se voit au démarrage du binder, pas au
+premier message.
 
 `CHAT_BROADCAST_TOPIC` existe pour qu'un topic par environnement reste possible — l'overlay dev
 utilise `DEV_MESSAGE_BROADCAST`. C'est indispensable dès que plusieurs environnements partagent
@@ -525,12 +526,13 @@ pseudonymous businessId.
 
 Le service expose HTTP et RSocket sur le même port 8084, RSocket étant monté sur `/rsocket` en transport WebSocket.
 
-Pour lancer **toute la plateforme** (bases, Keycloak, gateway, frontend, les quatre services) en une commande sur un Kubernetes local :
-
-```bash
-git clone https://github.com/WelyLabs/wely-gitops-infra && cd wely-gitops-infra
-kubectl apply -k overlays/local --server-side
-```
+> **Il n'y a plus de commande unique qui lève toute la plateforme.** L'overlay `local` de
+> `wely-gitops-infra` a été supprimé en novembre 2026 avec les bases qu'il déployait : depuis que
+> PostgreSQL, Neo4j, MongoDB, Kafka et le stockage des photos sont des services managés (Neon,
+> Aura, Atlas, Confluent Cloud, Cloudflare R2), un cluster local n'amorcerait qu'une coquille sans
+> rien à interroger. Pour travailler sur ce service, lance Keycloak par le `docker compose` du
+> dépôt de plateforme et donne-lui, par variables d'environnement, les URI de tes propres
+> instances — les paliers gratuits de ces cinq services suffisent.
 
 ---
 
