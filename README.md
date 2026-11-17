@@ -359,8 +359,8 @@ tard par son `Mono` ou son `Flux`.
 | Variable | Description |
 |---|---|
 | `MONGODB_URI` | URI de connexion MongoDB |
-| `KEYCLOAK_ISSUER_URI` | Issuer public — validation de l'émetteur |
-| `KEYCLOAK_INTERNAL_JWK_SET_URI` | JWKS interne — récupération des clés |
+| `OIDC_ISSUER_URI` | Émetteur Auth0 : `https://auth.welylabs.app/`, slash final compris |
+| `OIDC_JWK_SET_URI` | Clés de signature : `https://auth.welylabs.app/.well-known/jwks.json` |
 | `CHAT_BROADCAST_MODE` | `kafka` (défaut) ou `local` — voir ci-dessous |
 | `CHAT_BROADCAST_TOPIC` | Topic de diffusion, `MESSAGE_BROADCAST` par défaut |
 | `KAFKA_BOOTSTRAP_SERVER` | Broker, en mode `kafka` uniquement |
@@ -414,7 +414,7 @@ premier message.
 
 `CHAT_BROADCAST_TOPIC` existe pour qu'un topic par environnement reste possible — l'overlay dev
 utilise `DEV_MESSAGE_BROADCAST`. C'est indispensable dès que plusieurs environnements partagent
-un même broker : les identifiants utilisateur viennent du même realm Keycloak, donc un pod de
+un même broker : les identifiants utilisateur viennent du même tenant Auth0, donc un pod de
 dev consommant le topic de prod livrerait ces messages à ses propres abonnés.
 
 Sur un broker infogéré où la création automatique est désactivée, il faut créer le topic
@@ -530,8 +530,8 @@ Le service expose HTTP et RSocket sur le même port 8084, RSocket étant monté 
 > `wely-gitops-infra` a été supprimé en novembre 2026 avec les bases qu'il déployait : depuis que
 > PostgreSQL, Neo4j, MongoDB, Kafka et le stockage des photos sont des services managés (Neon,
 > Aura, Atlas, Confluent Cloud, Cloudflare R2), un cluster local n'amorcerait qu'une coquille sans
-> rien à interroger. Pour travailler sur ce service, lance Keycloak par le `docker compose` du
-> dépôt de plateforme et donne-lui, par variables d'environnement, les URI de tes propres
+> rien à interroger. Pour travailler sur ce service, lance-le en profil `dev`, qui valide les
+> jetons du tenant Auth0 (`auth.welylabs.app`), et donne-lui, par variables d'environnement, les URI de tes propres
 > instances — les paliers gratuits de ces cinq services suffisent.
 
 ---
