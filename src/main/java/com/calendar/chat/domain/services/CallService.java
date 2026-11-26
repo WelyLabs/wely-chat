@@ -190,6 +190,17 @@ public class CallService {
                 .flatMap(entry -> mediaRelay.closeTracks(entry.participant().sessionId(), mids));
     }
 
+    /**
+     * Turns the caller's camera off or back on for the others. TRACKS_PUBLISHED, not a new event
+     * type: apps already in use decode it and only refresh the call.
+     */
+    public Mono<Void> setCamera(String userId, String callId, boolean on) {
+        return callRepository.setCameraOff(callId, userId, !on)
+                .switchIfEmpty(Mono.error(new BusinessException(BusinessErrorCode.CALL_NOT_FOUND)))
+                .flatMap(call -> notify(call, CallEventType.TRACKS_PUBLISHED, userId, call.participantIdsExcept(userId)))
+                .then();
+    }
+
     /** Keeps the caller in the call; one who stops sending heartbeats is dropped. */
     public Mono<Void> heartbeat(String userId, String callId) {
         return callRepository.touch(callId, userId, clock.instant())
@@ -350,7 +361,7 @@ public class CallService {
     }
 
     private CallParticipant newParticipant(String userId, String sessionId) {
-        return new CallParticipant(userId, sessionId, clock.instant(), clock.instant(), List.of());
+        return new CallParticipant(userId, sessionId, clock.instant(), clock.instant(), List.of(), false);
     }
 
     private static boolean startedBy(Call call, String userId) {

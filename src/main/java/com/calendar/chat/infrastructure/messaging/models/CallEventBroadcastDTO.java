@@ -16,5 +16,5 @@ public record CallEventBroadcastDTO(String type, String recipientId, String acto
                           List<ParticipantDTO> participants) {}
 
     public record ParticipantDTO(String userId, String sessionId, Instant joinedAt, Instant lastSeenAt,
-                                 List<String> trackNames) {}
+                                 List<String> trackNames, boolean cameraOff) {}
 }

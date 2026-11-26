@@ -21,7 +21,7 @@ class CallPersistenceMapperTest {
 
     private static Call call(CallStatus status) {
         return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, status, NOW, null, List.of("alice", "bob"),
-                List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio", "camera"))));
+                List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio", "camera"), false)));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.calendar.chat.application.rest;
 
 import com.calendar.chat.application.dtos.CallDTO;
+import com.calendar.chat.application.dtos.CameraRequest;
 import com.calendar.chat.application.dtos.LayersRequest;
 import com.calendar.chat.application.dtos.PublishRequest;
 import com.calendar.chat.application.dtos.SessionDescriptionDTO;
@@ -69,7 +70,7 @@ class CallControllerTest {
 
     private static Call call() {
         return new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
-                List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-alice", NOW, NOW, List.of("audio"))));
+                List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-alice", NOW, NOW, List.of("audio"), false)));
     }
 
     @Test
@@ -219,6 +220,16 @@ class CallControllerTest {
         when(callService.unsubscribe("bob", "call-1", List.of())).thenReturn(Mono.empty());
 
         StepVerifier.create(controller.unsubscribe(jwt, "call-1", new UnsubscribeRequest(null))).expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void camera_shouldActForTheTokensUser() {
+        when(callService.setCamera("bob", "call-1", false)).thenReturn(Mono.empty());
+
+        StepVerifier.create(controller.camera(jwt, "call-1", new CameraRequest(false)))
+                .expectComplete().verify(Duration.ofSeconds(10));
+
+        verify(callService).setCamera("bob", "call-1", false);
     }
 
     @Test

@@ -19,4 +19,5 @@ public class CallParticipantEntity {
     private Instant joinedAt;
     private Instant lastSeenAt;
     private List<String> trackNames;
+    private boolean cameraOff;
 }

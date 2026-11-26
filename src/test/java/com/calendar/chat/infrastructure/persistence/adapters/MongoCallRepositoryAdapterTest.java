@@ -57,7 +57,7 @@ class MongoCallRepositoryAdapterTest {
     }
 
     private static CallParticipant bob() {
-        return new CallParticipant("bob", "s-bob", NOW, NOW, List.of());
+        return new CallParticipant("bob", "s-bob", NOW, NOW, List.of(), false);
     }
 
     private void stored(Call call) {
@@ -136,6 +136,15 @@ class MongoCallRepositoryAdapterTest {
         stored(call);
 
         StepVerifier.create(adapter.addTracks("call-1", "bob", List.of("audio"))).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
+    }
+
+    @Test
+    void setCameraOff_shouldReadTheCallBack_onceWritten() {
+        Call call = call(CallStatus.ACTIVE, bob());
+        when(repository.setCameraOff("call-1", "bob", true)).thenReturn(Mono.just(1L));
+        stored(call);
+
+        StepVerifier.create(adapter.setCameraOff("call-1", "bob", true)).expectNext(call).expectComplete().verify(Duration.ofSeconds(10));
     }
 
     @Test

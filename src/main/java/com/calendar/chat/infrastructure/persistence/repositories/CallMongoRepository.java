@@ -41,6 +41,10 @@ public interface CallMongoRepository extends ReactiveMongoRepository<CallEntity,
     Mono<Long> addTracks(String callId, String userId, List<String> trackNames);
 
     @Query("{ '_id': ?0, 'live': true, 'participants.userId': ?1 }")
+    @Update("{ '$set': { 'participants.$.cameraOff': ?2 } }")
+    Mono<Long> setCameraOff(String callId, String userId, boolean off);
+
+    @Query("{ '_id': ?0, 'live': true, 'participants.userId': ?1 }")
     @Update("{ '$set': { 'participants.$.lastSeenAt': ?2 } }")
     Mono<Long> touch(String callId, String userId, Instant at);
 

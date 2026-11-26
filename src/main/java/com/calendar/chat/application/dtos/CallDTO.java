@@ -12,5 +12,5 @@ public record CallDTO(String id, String conversationId, String startedBy, String
                       Instant startedAt, Instant endedAt, List<String> memberIds, List<Participant> participants) {
 
     /** Someone in the call, and what they publish. */
-    public record Participant(String userId, Instant joinedAt, List<String> trackNames) {}
+    public record Participant(String userId, Instant joinedAt, List<String> trackNames, boolean cameraOff) {}
 }

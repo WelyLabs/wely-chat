@@ -67,6 +67,11 @@ public class MongoCallRepositoryAdapter implements CallRepository {
     }
 
     @Override
+    public Mono<Call> setCameraOff(String callId, String userId, boolean off) {
+        return repository.setCameraOff(callId, userId, off).flatMap(changed -> readIfChanged(callId, changed));
+    }
+
+    @Override
     public Mono<Call> touch(String callId, String userId, Instant at) {
         return repository.touch(callId, userId, at).flatMap(changed -> readIfChanged(callId, changed));
     }
