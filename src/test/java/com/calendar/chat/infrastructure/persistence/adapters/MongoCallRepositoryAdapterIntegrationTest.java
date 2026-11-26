@@ -68,7 +68,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
     }
 
     private static CallParticipant participant(String userId, Instant seenAt) {
-        return new CallParticipant(userId, "s-" + userId, T0, seenAt, List.of());
+        return new CallParticipant(userId, "s-" + userId, T0, seenAt, List.of(), false);
     }
 
     @Test
@@ -124,7 +124,7 @@ class MongoCallRepositoryAdapterIntegrationTest {
         adapter.addParticipant(call.id(), participant("bob", T0), 12).block();
 
         Call rejoined = adapter.addParticipant(call.id(),
-                new CallParticipant("bob", "s-bob-2", T0, T0, List.of()), 12).block();
+                new CallParticipant("bob", "s-bob-2", T0, T0, List.of(), false), 12).block();
 
         assertThat(rejoined.participants()).singleElement()
                 .satisfies(bob -> assertThat(bob.sessionId()).isEqualTo("s-bob-2"));
@@ -139,12 +139,14 @@ class MongoCallRepositoryAdapterIntegrationTest {
 
         adapter.addTracks(call.id(), "bob", List.of("audio", "camera")).block();
         adapter.addTracks(call.id(), "bob", List.of("audio")).block();
+        adapter.setCameraOff(call.id(), "bob", true).block();
         adapter.touch(call.id(), "bob", T0.plusSeconds(15)).block();
         Call afterLeave = adapter.removeParticipant(call.id(), "alice").block();
 
         assertThat(afterLeave.participants()).singleElement().satisfies(bob -> {
             assertThat(bob.trackNames()).containsExactly("audio", "camera");
             assertThat(bob.lastSeenAt()).isEqualTo(T0.plusSeconds(15));
+            assertThat(bob.cameraOff()).isTrue();
         });
         StepVerifier.create(adapter.touch(call.id(), "alice", T0)).expectComplete().verify(Duration.ofSeconds(10));
     }

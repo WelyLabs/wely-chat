@@ -39,6 +39,9 @@ public interface CallRepository {
     /** Adds tracks to what a participant publishes; empty when they are not in the call. */
     Mono<Call> addTracks(String callId, String userId, List<String> trackNames);
 
+    /** Records whether a participant's camera is off; empty when they are not in the call. */
+    Mono<Call> setCameraOff(String callId, String userId, boolean off);
+
     /** Records a participant's heartbeat; empty when they are not in the call. */
     Mono<Call> touch(String callId, String userId, Instant at);
 

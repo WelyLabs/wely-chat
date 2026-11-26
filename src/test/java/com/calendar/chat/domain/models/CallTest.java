@@ -12,7 +12,7 @@ class CallTest {
     private static final Instant NOW = Instant.parse("2026-10-15T18:00:00Z");
 
     private static CallParticipant participant(String userId) {
-        return new CallParticipant(userId, "session-" + userId, NOW, NOW, List.of());
+        return new CallParticipant(userId, "session-" + userId, NOW, NOW, List.of(), false);
     }
 
     private static Call callWith(CallStatus status, List<CallParticipant> participants) {

@@ -23,7 +23,7 @@ class CallEventBroadcastMapperTest {
 
     private static CallEvent event() {
         Call call = new Call("call-1", "conv-1", "alice", "Alice", CallMedia.VIDEO, CallStatus.ACTIVE, NOW, null,
-                List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio"))));
+                List.of("alice", "bob"), List.of(new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio"), false)));
         return new CallEvent(CallEventType.TRACKS_PUBLISHED, "bob", "alice", call);
     }
 

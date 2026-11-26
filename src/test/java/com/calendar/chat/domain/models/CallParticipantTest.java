@@ -14,7 +14,7 @@ class CallParticipantTest {
 
     @Test
     void publishes_shouldTellWhichTracksTheParticipantSends() {
-        CallParticipant participant = new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio"));
+        CallParticipant participant = new CallParticipant("alice", "s-1", NOW, NOW, List.of("audio"), false);
 
         assertThat(participant.publishes("audio")).isTrue();
         assertThat(participant.publishes("camera")).isFalse();
@@ -23,7 +23,7 @@ class CallParticipantTest {
     @Test
     void constructor_shouldCopyTheTracks_soTheCallerCannotChangeThemAfterwards() {
         List<String> tracks = new ArrayList<>(List.of("audio"));
-        CallParticipant participant = new CallParticipant("alice", "s-1", NOW, NOW, tracks);
+        CallParticipant participant = new CallParticipant("alice", "s-1", NOW, NOW, tracks, false);
 
         tracks.add("camera");
 

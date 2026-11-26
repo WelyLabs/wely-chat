@@ -2,6 +2,7 @@ package com.calendar.chat.application.rest;
 
 import com.calendar.chat.application.dtos.CallDTO;
 import com.calendar.chat.application.dtos.CallJoinResponse;
+import com.calendar.chat.application.dtos.CameraRequest;
 import com.calendar.chat.application.dtos.LayersRequest;
 import com.calendar.chat.application.dtos.PublishRequest;
 import com.calendar.chat.application.dtos.SessionDescriptionDTO;
@@ -105,6 +106,14 @@ public class CallController {
                              @RequestBody LayersRequest request) {
         return callService.chooseLayers(caller(jwt), callId,
                 parsed(() -> nonNull(request.choices()).stream().map(mapper::toDomain).toList()));
+    }
+
+    /** Tells the others the caller's camera is off, or back on. */
+    @PutMapping("/{callId}/camera")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public Mono<Void> camera(@AuthenticationPrincipal Jwt jwt, @PathVariable String callId,
+                             @RequestBody CameraRequest request) {
+        return callService.setCamera(caller(jwt), callId, request.on());
     }
 
     @PostMapping("/{callId}/unsubscribe")

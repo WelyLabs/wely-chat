@@ -110,7 +110,7 @@ class CallServiceTest {
     }
 
     private static CallParticipant in(String userId, String... tracks) {
-        return new CallParticipant(userId, "session-" + userId, NOW, NOW, List.of(tracks));
+        return new CallParticipant(userId, "session-" + userId, NOW, NOW, List.of(tracks), false);
     }
 
     private static Call call(CallStatus status, List<String> members, CallParticipant... participants) {
@@ -297,7 +297,7 @@ class CallServiceTest {
 
         ArgumentCaptor<CallParticipant> added = ArgumentCaptor.forClass(CallParticipant.class);
         verify(callRepository).addParticipant(eq("call-1"), added.capture(), eq(MAX_PARTICIPANTS));
-        assertThat(added.getValue()).isEqualTo(new CallParticipant("bob", "session-bob", NOW, NOW, List.of()));
+        assertThat(added.getValue()).isEqualTo(new CallParticipant("bob", "session-bob", NOW, NOW, List.of(), false));
         assertThat(broadcastEvents(1)).singleElement()
                 .isEqualTo(new CallEvent(CallEventType.PARTICIPANT_JOINED, "alice", "bob", active));
     }
@@ -559,6 +559,28 @@ class CallServiceTest {
                 .thenReturn(Mono.just(call(CallStatus.ACTIVE, List.of("alice", "carol"), in("alice"))));
 
         StepVerifier.create(service.unsubscribe("carol", "call-1", List.of("3")))
+                .consumeErrorWith(error -> assertThat(((BusinessException) error).getErrorCode())
+                        .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND)).verify(Duration.ofSeconds(10));
+    }
+
+    // --- camera --------------------------------------------------------------------------
+
+    @Test
+    void setCamera_shouldRecordItOff_andTellTheOthers() {
+        Call updated = call(CallStatus.ACTIVE, List.of("alice", "bob"), in("alice"), in("bob", "camera"));
+        when(callRepository.setCameraOff("call-1", "bob", true)).thenReturn(Mono.just(updated));
+
+        StepVerifier.create(service.setCamera("bob", "call-1", false)).expectComplete().verify(Duration.ofSeconds(10));
+
+        assertThat(broadcastEvents(1)).singleElement()
+                .isEqualTo(new CallEvent(CallEventType.TRACKS_PUBLISHED, "alice", "bob", updated));
+    }
+
+    @Test
+    void setCamera_shouldRefuse_someoneNotInTheCall() {
+        when(callRepository.setCameraOff("call-1", "bob", false)).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.setCamera("bob", "call-1", true))
                 .consumeErrorWith(error -> assertThat(((BusinessException) error).getErrorCode())
                         .isEqualTo(BusinessErrorCode.CALL_NOT_FOUND)).verify(Duration.ofSeconds(10));
     }
@@ -962,8 +984,8 @@ class CallServiceTest {
     @Test
     void expire_shouldTakeOutOnlyTheParticipantsWhoWentSilent() {
         Instant silentSince = NOW.minus(CallService.SILENCE_TIMEOUT);
-        CallParticipant silent = new CallParticipant("bob", "s-bob", NOW, silentSince.minusSeconds(1), List.of());
-        CallParticipant alive = new CallParticipant("carol", "s-carol", NOW, NOW, List.of());
+        CallParticipant silent = new CallParticipant("bob", "s-bob", NOW, silentSince.minusSeconds(1), List.of(), false);
+        CallParticipant alive = new CallParticipant("carol", "s-carol", NOW, NOW, List.of(), false);
         Call call = call(CallStatus.ACTIVE, List.of("alice", "bob", "carol"), silent, alive);
         when(callRepository.findRingingStartedBefore(any())).thenReturn(Flux.empty());
         when(callRepository.findLiveWithParticipantSeenBefore(silentSince)).thenReturn(Flux.just(call));
